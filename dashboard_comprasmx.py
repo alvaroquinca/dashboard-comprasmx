@@ -9,8 +9,10 @@ Instrucciones:
    streamlit run dashboard_comprasmx.py
 """
 
+import json
 import re as _re
 from datetime import date as _date
+from pathlib import Path
 
 import streamlit as st
 import pandas as pd
@@ -435,6 +437,45 @@ _ucs_sidebar = ["Todas"] + sorted(dff["Nombre de la UC"].dropna().unique().tolis
 uc_sel = st.sidebar.selectbox("🏢 Unidad Compradora", _ucs_sidebar)
 if uc_sel != "Todas":
     dff = dff[dff["Nombre de la UC"] == uc_sel]
+
+# ── Última actualización de datos (sidebar) ──
+_META_PATH = Path(__file__).parent / "metadata.json"
+_meta_labels = {
+    "contratos_comprasmx_2026.csv": "Contratos 2026",
+    "contratos_comprasmx_2025.csv": "Contratos 2025",
+    "contratos_compranet_2024.csv": "Contratos 2024",
+    "Listado_completo_69-B.csv":    "EFOS 69-B (SAT)",
+    "AnaliticaPreciosUnitarios.xlsx": "Analítica precios",
+}
+try:
+    with open(_META_PATH, encoding="utf-8") as _mf:
+        _meta = json.load(_mf)
+    # Fecha de actualización más reciente entre los contratos
+    _fechas_contratos = [
+        _meta[k]["actualizado"]
+        for k in ("contratos_comprasmx_2026.csv",
+                  "contratos_comprasmx_2025.csv",
+                  "contratos_compranet_2024.csv")
+        if k in _meta
+    ]
+    _ultima = max(_fechas_contratos) if _fechas_contratos else None
+    st.sidebar.divider()
+    if _ultima:
+        st.sidebar.caption(f"🗓 **Datos actualizados:** {_ultima}")
+    with st.sidebar.expander("📋 Detalle por fuente"):
+        for _fname, _label in _meta_labels.items():
+            if _fname in _meta:
+                _m = _meta[_fname]
+                _filas = f"{_m['filas']:,} registros" if "filas" in _m else ""
+                st.caption(
+                    f"**{_label}**  \n"
+                    f"🕐 {_m.get('actualizado', '—')}"
+                    + (f"  \n📊 {_filas}" if _filas else "")
+                )
+except FileNotFoundError:
+    pass  # metadata.json no existe aún — no mostrar nada
+except Exception:
+    pass  # cualquier error de lectura — no interrumpir el dashboard
 
 # ─────────────────────────────────────────────
 # KPIs PRINCIPALES (siempre visibles, fuera de tabs)

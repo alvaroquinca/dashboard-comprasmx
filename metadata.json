@@ -1,0 +1,67 @@
+{
+  "contratos_comprasmx_2026.csv": {
+    "descripcion": "Contratos ComprasMX / CompraNet",
+    "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
+    "actualizado": "2026-03-05 13:32",
+    "filas": 14744,
+    "columnas": 21
+  },
+  "contratos_comprasmx_2025.csv": {
+    "descripcion": "Contratos ComprasMX / CompraNet",
+    "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
+    "actualizado": "2026-03-05 13:33",
+    "filas": 28987,
+    "columnas": 21
+  },
+  "contratos_compranet_2024.csv": {
+    "descripcion": "Contratos ComprasMX / CompraNet",
+    "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
+    "actualizado": "2026-03-05 13:34",
+    "filas": 46535,
+    "columnas": 21
+  },
+  "Listado_completo_69-B.csv": {
+    "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:34",
+    "filas": 14280,
+    "columnas": 3
+  },
+  "AnaliticaPreciosUnitarios.xlsx": {
+    "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:35",
+    "filas": 22164,
+    "columnas": 25
+  },
+  "BD_01_2026__Me_trica_empresas_inhabilitadas__DOF.xlsm": {
+    "descripcion": "BD_01_2026__Me_trica_empresas_inhabilitadas__DOF.xlsm",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  },
+  "cucop_20260301.xlsx": {
+    "descripcion": "cucop_20260301.xlsx",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  },
+  "Base_UC_2025_V2.xlsx": {
+    "descripcion": "Base_UC_2025_V2.xlsx",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  },
+  "UmbralPEF.xlsx": {
+    "descripcion": "UmbralPEF.xlsx",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  },
+  "expedientes_comprasmx_2026.csv": {
+    "descripcion": "expedientes_comprasmx_2026.csv",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  },
+  "Proveedores_Contratistas_Sancionados.xlsx": {
+    "descripcion": "Proveedores_Contratistas_Sancionados.xlsx",
+    "fuente": "local",
+    "actualizado": "2026-03-05 13:30"
+  }
+}
