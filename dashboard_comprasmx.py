@@ -2843,19 +2843,34 @@ def pagina_explorador():
                 .sum().sort_values(ascending=False).head(top_n_g3).reset_index()
             )
             top_g.columns = ["Grupo", "Monto"]
-            top_g["Monto_fmt"] = top_g["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
+            top_g["Monto_M"]   = top_g["Monto"] / 1e6
+            top_g["Monto_fmt"] = top_g["Monto"].apply(
+                lambda x: f"${x/1e9:,.2f} mil M" if x >= 1e9 else f"${x/1e6:,.1f} M"
+            )
+            _h_g3 = max(340, len(top_g) * 40)
             fig_g3 = px.bar(
-                top_g.sort_values("Monto"), x="Monto", y="Grupo",
+                top_g.sort_values("Monto_M"), x="Monto_M", y="Grupo",
                 orientation="h", text="Monto_fmt",
                 color_discrete_sequence=[IMSS_VERDE_OSC],
                 title=f"Top {top_n_g3} adscripciones por monto contratado"
             )
-            fig_g3.update_layout(font=plotly_font(), xaxis_title="Monto (MXN)",
-                                 yaxis_title="", showlegend=False,
-                                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff")
-            fig_g3.update_traces(marker_color=IMSS_VERDE_OSC,
-                                 textfont=dict(family="Noto Sans, sans-serif"),
-                                 textposition="outside", cliponaxis=False)
+            fig_g3.update_layout(
+                font=plotly_font(),
+                xaxis_title="Monto (M MXN)",
+                yaxis_title="",
+                showlegend=False,
+                plot_bgcolor="#ffffff",
+                paper_bgcolor="#ffffff",
+                height=_h_g3,
+                margin=dict(l=10, r=130, t=40, b=20),
+                yaxis=dict(automargin=True, tickfont=dict(size=12)),
+            )
+            fig_g3.update_traces(
+                marker_color=IMSS_VERDE_OSC,
+                textfont=dict(family="Noto Sans, sans-serif"),
+                textposition="outside",
+                cliponaxis=False,
+            )
             st.plotly_chart(fig_g3, use_container_width=True)
 
         else:  # Unidad Compradora
@@ -2865,22 +2880,32 @@ def pagina_explorador():
                 .sum().sort_values(ascending=False).head(top_n_g3).reset_index()
             )
             top_g.columns = ["UC", "Adscripción", "Tipo UC", "Monto"]
-            top_g["Monto_fmt"] = top_g["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
+            top_g["Monto_M"]   = top_g["Monto"] / 1e6
+            top_g["Monto_fmt"] = top_g["Monto"].apply(
+                lambda x: f"${x/1e9:,.2f} mil M" if x >= 1e9 else f"${x/1e6:,.1f} M"
+            )
             top_g["UC_corta"]  = top_g["UC"].apply(
                 lambda s: s[:50] + "…" if len(s) > 50 else s
             )
+            _h_g3_uc = max(340, len(top_g) * 40)
             fig_g3 = px.bar(
-                top_g.sort_values("Monto"), x="Monto", y="UC_corta",
+                top_g.sort_values("Monto_M"), x="Monto_M", y="UC_corta",
                 orientation="h", text="Monto_fmt",
                 color="Tipo UC", color_discrete_map=color_tipo_uc,
                 title=f"Top {top_n_g3} unidades compradoras por monto contratado",
                 custom_data=["UC", "Adscripción"]
             )
             fig_g3.update_layout(
-                font=plotly_font(), xaxis_title="Monto (MXN)", yaxis_title="",
-                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                font=plotly_font(),
+                xaxis_title="Monto (M MXN)",
+                yaxis_title="",
+                plot_bgcolor="#ffffff",
+                paper_bgcolor="#ffffff",
+                height=_h_g3_uc,
+                margin=dict(l=10, r=130, t=50, b=20),
+                yaxis=dict(automargin=True, tickfont=dict(size=11)),
                 legend=dict(title="Tipo UC", orientation="h",
-                            yanchor="bottom", y=1.01, xanchor="left", x=0)
+                            yanchor="bottom", y=1.01, xanchor="left", x=0),
             )
             fig_g3.update_traces(
                 textfont=dict(family="Noto Sans, sans-serif"),
