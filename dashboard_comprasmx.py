@@ -906,45 +906,68 @@ def pagina_descripcion():
         st.plotly_chart(fig6, use_container_width=True)
 
     # ── Timeline mensual de contratos ────────────────────────────
-    st.markdown("**Contratos adjudicados por mes y tipo de procedimiento**")
+    st.markdown("**Monto contratado por mes y tipo de procedimiento**")
     _dff_tl = dff.copy()
     _dff_tl["Tipo Display"] = _dff_tl["Tipo Simplificado"].replace(
         {"Adjudicación Directa — Fr. I": "Adjudicación Directa — Patentes"}
     )
-    _dff_tl["_mes"] = pd.to_datetime(
+    _MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+                 7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+    _fecha_tl = pd.to_datetime(
         _dff_tl["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
-    ).dt.to_period("M").astype(str)
+    )
+    _dff_tl["_mes_sort"]  = (
+        _fecha_tl.dt.year.astype("Int64").astype(str)
+        + _fecha_tl.dt.month.astype("Int64").astype(str).str.zfill(2)
+    )
+    _dff_tl["_mes_label"] = (
+        _fecha_tl.dt.month.map(_MESES_ES)
+        + " " + _fecha_tl.dt.year.astype("Int64").astype(str)
+    )
     _tl_data = (
-        _dff_tl[_dff_tl["_mes"].notna()]
-        .groupby(["_mes", "Tipo Display"])
+        _dff_tl[_dff_tl["_mes_sort"].notna() & (_dff_tl["_mes_sort"] != "NANaN")]
+        .groupby(["_mes_sort", "_mes_label", "Tipo Display"])
         .agg(Contratos=("Importe DRC", "count"), Monto=("Importe DRC", "sum"))
         .reset_index()
-        .rename(columns={"_mes": "Mes"})
+        .sort_values("_mes_sort")
     )
+    # Orden categórico de los meses para el eje X
+    _orden_meses = (
+        _tl_data[["_mes_sort", "_mes_label"]]
+        .drop_duplicates()
+        .sort_values("_mes_sort")["_mes_label"]
+        .tolist()
+    )
+    _tl_data["Monto_M"] = (_tl_data["Monto"] / 1e6).round(2)
+    _tl_data["Monto_fmt"] = _tl_data["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
+
     if len(_tl_data) > 0:
         _colores_tl = {k.replace("Adjudicación Directa — Fr. I", "Adjudicación Directa — Patentes"): v
                        for k, v in COLORES_TIPO.items()}
         fig_tl = px.bar(
             _tl_data,
-            x="Mes", y="Contratos",
+            x="_mes_label", y="Monto_M",
             color="Tipo Display",
             color_discrete_map=_colores_tl,
             barmode="stack",
-            custom_data=["Tipo Display", "Monto"],
+            category_orders={"_mes_label": _orden_meses},
+            custom_data=["Tipo Display", "Contratos", "Monto_fmt"],
         )
         fig_tl.update_traces(
             hovertemplate="<b>%{x}</b> · %{customdata[0]}<br>"
-                          "Contratos: %{y:,}<br>"
-                          "Monto: $%{customdata[1]:,.0f}<extra></extra>",
+                          "Monto: %{customdata[2]}<br>"
+                          "Contratos: %{customdata[1]:,}<extra></extra>",
         )
         fig_tl.update_layout(
             font=plotly_font(),
-            xaxis_title="", yaxis_title="Número de contratos",
+            xaxis_title="",
+            yaxis_title="Monto (M MXN)",
+            xaxis=dict(tickangle=-35, tickfont=dict(size=11)),
             legend_title="Tipo",
-            legend=dict(orientation="h", y=-0.2, font=dict(size=10)),
+            legend=dict(orientation="h", y=-0.28, font=dict(size=10)),
             plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-            height=320,
-            margin=dict(t=10, b=60),
+            height=350,
+            margin=dict(t=10, b=90),
         )
         st.plotly_chart(fig_tl, use_container_width=True)
 
@@ -2946,6 +2969,204 @@ def pagina_explorador():
             st.dataframe(tbl_p3, use_container_width=True)
 
         st.divider()
+
+        # ── BLOQUE HISTÓRICO: Evolución por partida ───────────────────────────
+        if len(anios_sel) >= 2:
+            st.subheader("📈 Evolución histórica por partida presupuestaria")
+            st.caption(
+                "Compara el monto contratado entre los años seleccionados. "
+                "La variación % se calcula entre el penúltimo y el último año del período."
+            )
+
+            # ── Filtro de UC / Adscripción ────────────────────────────────────
+            _tiene_adsc_hist = "Adscripción" in dff_uc_cucop.columns
+            _fh_uc_sel   = None
+            _fh_adsc_sel = None
+            _fh_tipo_col, _fh_val_col = st.columns([1, 3])
+            with _fh_tipo_col:
+                _fh_tipo = st.radio(
+                    "Filtrar por",
+                    ["Todas las UCs", "Unidad Compradora", "Adscripción"],
+                    key="fh_tipo_hist",
+                    horizontal=False,
+                )
+            with _fh_val_col:
+                if _fh_tipo == "Unidad Compradora":
+                    _opts_uc_h = sorted(
+                        dff_uc_cucop["Nombre de la UC"].dropna().unique().tolist()
+                    )
+                    _fh_uc_sel = st.selectbox(
+                        "Unidad Compradora", _opts_uc_h, key="fh_uc_hist"
+                    )
+                elif _fh_tipo == "Adscripción" and _tiene_adsc_hist:
+                    _opts_adsc_h = sorted(
+                        dff_uc_cucop["Adscripción"].dropna().unique().tolist()
+                    )
+                    _fh_adsc_sel = st.selectbox(
+                        "Adscripción", _opts_adsc_h, key="fh_adsc_hist"
+                    )
+                else:
+                    st.caption(
+                        "Mostrando todas las Unidades Compradoras del ámbito seleccionado."
+                    )
+
+            # ── Controles de nivel / top / modo ──────────────────────────────
+            _ch1, _ch2, _ch3 = st.columns([2, 1, 1])
+            with _ch1:
+                _nivel_hist = st.selectbox(
+                    "Nivel de agrupación",
+                    ["Partida genérica", "Capítulo"],
+                    key="nivel_hist_expl",
+                )
+            with _ch2:
+                _top_n_hist = st.selectbox(
+                    "Top partidas", [10, 15, 20], key="top_n_hist_expl"
+                )
+            with _ch3:
+                _solo_variacion = st.checkbox(
+                    "Solo variación %", value=False, key="solo_var_hist"
+                )
+
+            # Etiqueta según nivel
+            _df_hist = dff_uc_cucop.copy()
+            # Aplicar filtro de UC / Adscripción
+            if _fh_tipo == "Unidad Compradora" and _fh_uc_sel:
+                _df_hist = _df_hist[_df_hist["Nombre de la UC"] == _fh_uc_sel]
+            elif _fh_tipo == "Adscripción" and _fh_adsc_sel and _tiene_adsc_hist:
+                _df_hist = _df_hist[_df_hist["Adscripción"] == _fh_adsc_sel]
+            if _nivel_hist == "Partida genérica":
+                _df_hist["_etiq"] = (
+                    _df_hist["PARTIDA GENÉRICA"].fillna("").str.strip()
+                    + " — "
+                    + _df_hist["DESC. PARTIDA GENÉRICA"].fillna("Sin descripción")
+                )
+            else:
+                _df_hist["_etiq"] = (
+                    _df_hist["Partida específica"].str[:1].fillna("") + "000 — "
+                    + _df_hist["DESC. CAPÍTULO"].fillna("Sin descripción")
+                )
+
+            # Agrupar por año y partida
+            _hist_grp = (
+                _df_hist.groupby(["Año", "_etiq"])["Importe DRC"]
+                .sum().reset_index()
+            )
+
+            # Top N partidas por monto total acumulado
+            _top_etiq = (
+                _hist_grp.groupby("_etiq")["Importe DRC"]
+                .sum().sort_values(ascending=False)
+                .head(_top_n_hist).index
+            )
+            _hist_grp = _hist_grp[_hist_grp["_etiq"].isin(_top_etiq)].copy()
+            _hist_grp["Etiqueta"] = _hist_grp["_etiq"].apply(
+                lambda s: s[:52] + "…" if len(str(s)) > 52 else s
+            )
+            _hist_grp["Monto_M"] = (_hist_grp["Importe DRC"] / 1e6).round(2)
+            _hist_grp["Monto_fmt"] = _hist_grp["Importe DRC"].apply(
+                lambda x: f"${x/1e6:,.1f} M"
+            )
+
+            _anios_ord = sorted(anios_sel)
+            _paleta_hist = [IMSS_VERDE_OSC, IMSS_VERDE, IMSS_ORO_CLARO]
+
+            if not _solo_variacion:
+                # ── Barras agrupadas por año ──────────────────────────────────
+                fig_hist = px.bar(
+                    _hist_grp.sort_values("Importe DRC", ascending=False),
+                    x="Etiqueta",
+                    y="Monto_M",
+                    color="Año",
+                    barmode="group",
+                    color_discrete_sequence=_paleta_hist,
+                    labels={"Monto_M": "Monto (M MXN)", "Etiqueta": ""},
+                    custom_data=["_etiq", "Año", "Monto_fmt"],
+                )
+                fig_hist.update_traces(
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "Año: %{customdata[1]}<br>"
+                        "Monto: %{customdata[2]}<extra></extra>"
+                    )
+                )
+                fig_hist.update_layout(
+                    font=plotly_font(),
+                    xaxis_tickangle=-35,
+                    plot_bgcolor="#ffffff",
+                    paper_bgcolor="#ffffff",
+                    height=430,
+                    margin=dict(b=130, t=10),
+                    legend_title="Año",
+                    yaxis_title="Monto (M MXN)",
+                    xaxis_title="",
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+            # ── Variación % penúltimo → último año ───────────────────────────
+            _year_a = _anios_ord[-2]
+            _year_b = _anios_ord[-1]
+
+            _pivot_h = _hist_grp.pivot_table(
+                index=["_etiq", "Etiqueta"],
+                columns="Año",
+                values="Importe DRC",
+                aggfunc="sum",
+            ).fillna(0).reset_index()
+
+            if _year_a in _pivot_h.columns and _year_b in _pivot_h.columns:
+                _pivot_h["Variación %"] = (
+                    (_pivot_h[_year_b] - _pivot_h[_year_a])
+                    / _pivot_h[_year_a].replace(0, pd.NA) * 100
+                ).fillna(0).round(1)
+                _pivot_h["Monto_a_fmt"] = _pivot_h[_year_a].apply(lambda x: f"${x/1e6:,.1f} M")
+                _pivot_h["Monto_b_fmt"] = _pivot_h[_year_b].apply(lambda x: f"${x/1e6:,.1f} M")
+                _pivot_h = _pivot_h.sort_values("Variación %")
+                _pivot_h["Color"] = _pivot_h["Variación %"].apply(
+                    lambda x: IMSS_ROJO if x < 0 else IMSS_VERDE
+                )
+
+                st.markdown(f"**Variación % de {_year_a} a {_year_b}**")
+                fig_var = px.bar(
+                    _pivot_h,
+                    x="Variación %",
+                    y="Etiqueta",
+                    orientation="h",
+                    color="Color",
+                    color_discrete_map="identity",
+                    text=_pivot_h["Variación %"].apply(lambda x: f"{x:+.1f}%"),
+                    custom_data=["_etiq", "Monto_a_fmt", "Monto_b_fmt"],
+                )
+                fig_var.update_layout(
+                    font=plotly_font(),
+                    xaxis_title=f"Variación % {_year_a} → {_year_b}",
+                    yaxis_title="",
+                    showlegend=False,
+                    plot_bgcolor="#ffffff",
+                    paper_bgcolor="#ffffff",
+                    height=max(360, len(_pivot_h) * 36),
+                    margin=dict(l=10, r=20, t=10, b=40),
+                    uniformtext=dict(mode="hide", minsize=9),
+                )
+                fig_var.update_traces(
+                    textposition="inside",
+                    insidetextanchor="middle",
+                    textfont=dict(
+                        family="Noto Sans, sans-serif",
+                        size=11,
+                        color="white",
+                    ),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        f"{_year_a}: %{{customdata[1]}}<br>"
+                        f"{_year_b}: %{{customdata[2]}}<br>"
+                        "Variación: %{x:+.1f}%<extra></extra>"
+                    ),
+                )
+                # Línea vertical en cero
+                fig_var.add_vline(x=0, line_width=1, line_color=IMSS_GRIS)
+                st.plotly_chart(fig_var, use_container_width=True)
+
+            st.divider()
 
         # ── BLOQUE 3: Mapa de calor ──
         # Nivel Central o adscripción específica → filas = UC
