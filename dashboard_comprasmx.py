@@ -1141,13 +1141,9 @@ def pagina_descripcion():
         )
 
         # ── 4. Ponderación por monto (factor 1.0 – 1.5) ─────────
-        _monto_pct = dff["Importe DRC"].rank(pct=True, na_option="bottom")
-        _score_w   = (_score_base * (1.0 + 0.5 * _monto_pct)).round(2)
-
-        # Normalizar a 0-100 para la columna de progreso
-        _max_sw = _score_w.max()
-        _score_norm = ((_score_w / _max_sw * 100) if _max_sw > 0
-                       else _score_w).round(1)
+        _monto_pct  = dff["Importe DRC"].rank(pct=True, na_option="bottom")
+        _score_w    = (_score_base * (1.0 + 0.5 * _monto_pct)).round(2)
+        _score_norm = _score_w.clip(upper=100).round(1)  # tope en 100 pts
 
         # ── 5. Etiquetas de alertas detectadas ──────────────────
         _alerta_parts = []
@@ -1241,11 +1237,11 @@ def pagina_descripcion():
             column_config={
                 "Score": st.column_config.ProgressColumn(
                     "🎯 Score",
-                    help="Score de riesgo normalizado (0–100). Combina indicadores SABG, EFOS, "
-                         "reciente creación y tipo de procedimiento, ponderado por monto.",
+                    help="Score de riesgo ponderado por monto. Combina indicadores SABG, EFOS, "
+                         "reciente creación y tipo de procedimiento.",
                     min_value=0,
                     max_value=100,
-                    format="%.0f",
+                    format="%.1f",
                 ),
                 "Alertas":   st.column_config.TextColumn("🚨 Alertas detectadas", width="large"),
                 "Proveedor": st.column_config.TextColumn("Proveedor", width="medium"),
@@ -4366,11 +4362,12 @@ def pagina_mapa_riesgo():
     import re as _re_mr
     from datetime import date as _date_mr
 
-    st.header("\U0001f5fa\ufe0f Ficha de Riesgo por Entidad")
+    st.header("🗺️ Perfil UC")
     st.caption(
-        "Selecciona una Unidad Compradora o Adscripci\u00f3n para obtener su numeralia y los "
-        "riesgos espec\u00edficos detectados por los indicadores del dashboard. "
-        "Solo se muestran las categor\u00edas donde se encontraron hallazgos."
+        "Selecciona una Unidad Compradora o Adscripción para obtener su numeralia, "
+        "los riesgos específicos detectados por los indicadores del dashboard "
+        "y el listado completo de contratos. "
+        "Solo se muestran las categorías de riesgo donde se encontraron hallazgos."
     )
 
     # \u2500\u2500 1. Selector \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -4976,6 +4973,52 @@ def pagina_mapa_riesgo():
         st.caption("\u2705 Sin hallazgos en: " + " \u00b7 ".join(_riesgos_limpios))
 
     st.divider()
+
+    # ── Listado completo de contratos ─────────────────────────────────────────
+    with st.expander(
+        f"📄 Listado completo de contratos — {_label_mr} ({_total_mr:,} contratos)",
+        expanded=False,
+    ):
+        _COLS_TABLA_MR = [c for c in [
+            "Número de procedimiento",
+            "Proveedor o contratista",
+            "Tipo Simplificado",
+            "Importe DRC",
+            "Fecha de inicio del contrato",
+            "Descripción del contrato",
+            "Dirección del anuncio",
+        ] if c in _dff_sel.columns]
+
+        _tabla_mr = _dff_sel[_COLS_TABLA_MR].copy()
+
+        # Formato moneda
+        if "Importe DRC" in _tabla_mr.columns:
+            _tabla_mr["Importe DRC"] = _tabla_mr["Importe DRC"].apply(
+                lambda x: f"${x:,.2f}" if pd.notna(x) else "—"
+            )
+
+        # Botón de descarga
+        _csv_mr = _dff_sel[_COLS_TABLA_MR].to_csv(index=False, encoding="utf-8")
+        st.download_button(
+            label="⬇️ Descargar CSV",
+            data=_csv_mr,
+            file_name=f"contratos_{_label_mr.replace(' ', '_')}.csv",
+            mime="text/csv",
+            key="dl_tabla_mr",
+        )
+
+        _col_cfg_mr = {}
+        if "Dirección del anuncio" in _tabla_mr.columns:
+            _col_cfg_mr["Dirección del anuncio"] = st.column_config.LinkColumn(
+                "🔗 ComprasMX", display_text="Ver contrato"
+            )
+
+        st.dataframe(
+            _tabla_mr,
+            use_container_width=True,
+            column_config=_col_cfg_mr,
+            hide_index=True,
+        )
 
 
 # ───────────────────────────────────────────────────────────────
@@ -7532,15 +7575,15 @@ pg = st.navigation(
             st.Page(pagina_historica,   title="Evolución Histórica",          icon="📈"),
         ],
         "Indicadores de Riesgo": [
-            st.Page(pagina_mapa_riesgo,    title="Mapa de Riesgo por UC",  icon="🗺️"),
-            st.Page(pagina_riesgo,         title="Indicadores de Riesgo",  icon="🚨"),
-            st.Page(pagina_fragmentacion,  title="Fragmentación",           icon="🧩"),
+            st.Page(pagina_riesgo,         title="Indicadores de Riesgo",    icon="🚨"),
+            st.Page(pagina_fragmentacion,  title="Fragmentación",             icon="🧩"),
             st.Page(pagina_colusion,       title="Simulación de Competencia", icon="🕸️"),
-            st.Page(pagina_precios,        title="Analítica de Precios",   icon="💊"),
+            st.Page(pagina_precios,        title="Analítica de Precios",     icon="💊"),
         ],
         "Herramientas": [
-            st.Page(pagina_expediente, title="Expediente de Contrato", icon="🔎"),
-            st.Page(pagina_empresa,    title="Ficha de la Empresa",     icon="🏭"),
+            st.Page(pagina_expediente,  title="Expediente de Contrato", icon="🔎"),
+            st.Page(pagina_empresa,     title="Ficha de la Empresa",    icon="🏭"),
+            st.Page(pagina_mapa_riesgo, title="Perfil UC",              icon="🗺️"),
         ],
     }
 )
