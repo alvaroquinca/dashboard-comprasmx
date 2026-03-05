@@ -1,0 +1,19 @@
+[theme]
+# Paleta institucional IMSS
+primaryColor        = "#0B5445"   # IMSS_VERDE  — botones, sliders, checkboxes
+backgroundColor     = "#FFFFFF"   # Fondo principal
+secondaryBackgroundColor = "#F4F6F5"  # Sidebar y contenedores secundarios
+textColor           = "#171B19"   # IMSS_NEGRO  — texto principal
+font                = "sans serif"
+
+[server]
+# Aumentar límite para archivos de datos locales
+maxUploadSize       = 200         # MB — archivos que el usuario puede subir
+maxMessageSize      = 200         # MB — mensajes internos
+
+[browser]
+gatherUsageStats    = false       # No enviar telemetría a Streamlit
+
+[runner]
+# Evitar recarga accidental por edición de archivos de datos
+fastReruns          = true
