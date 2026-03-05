@@ -488,8 +488,7 @@ n_adj_directas  = dff["Tipo Simplificado"].isin(["Adjudicación Directa", "Adjud
 pct_adj         = (n_adj_directas / total_contratos * 100) if total_contratos > 0 else 0
 n_proveedores   = dff["Proveedor o contratista"].nunique()
 
-_monto_lp_kpi = dff.loc[dff["Tipo Simplificado"] == "Licitación Pública", "Importe DRC"].sum()
-pct_lp_kpi    = (_monto_lp_kpi / monto_total * 100) if monto_total > 0 else 0
+n_ucs_activas = dff["Nombre de la UC"].nunique()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("📄 Total de contratos", f"{total_contratos:,}")
@@ -497,19 +496,7 @@ col2.metric(
     "💰 Monto total",
     f"${monto_total/1e9:,.2f} miles de millones MXN" if monto_total >= 1e9 else f"${monto_total/1e6:,.1f} M MXN"
 )
-col3.metric(
-    "🟢 Licitación pública (% monto)",
-    f"{pct_lp_kpi:.1f}%",
-    delta=f"{pct_lp_kpi - 65:.1f} pp vs meta 65%",
-    delta_color="normal" if pct_lp_kpi >= 65 else "inverse",
-    help=(
-        "**Meta presidencial del 65 % por licitación pública.**\n\n"
-        "El Decreto presidencial del 18 de noviembre de 2024 establece que al menos el **65 %** "
-        "del monto total de adquisiciones de la APF debe adjudicarse mediante **licitación pública**, "
-        "como mecanismo que garantiza transparencia, competencia y las mejores condiciones para el Estado. "
-        "El indicador muestra la desviación en puntos porcentuales (pp) respecto a dicha meta."
-    )
-)
+col3.metric("🏥 Unidades Compradoras activas", f"{n_ucs_activas:,}")
 col4.metric("🏢 Proveedores únicos", f"{n_proveedores:,}")
 
 st.divider()
@@ -547,8 +534,10 @@ def pagina_descripcion():
 
     col_a, col_b = st.columns(2)
 
+    _TIPO_RENAME = {"Adjudicación Directa — Fr. I": "Adjudicación Directa — Patentes"}
+
     with col_a:
-        dist_num = dff["Tipo Simplificado"].value_counts().reset_index()
+        dist_num = dff["Tipo Simplificado"].replace(_TIPO_RENAME).value_counts().reset_index()
         dist_num.columns = ["Tipo", "Contratos"]
         fig1 = px.pie(dist_num, names="Tipo", values="Contratos",
                       color="Tipo", color_discrete_map=COLORES_TIPO,
@@ -574,7 +563,9 @@ def pagina_descripcion():
         st.plotly_chart(fig1, use_container_width=True)
 
     with col_b:
-        dist_monto = dff.groupby("Tipo Simplificado")["Importe DRC"].sum().reset_index()
+        dist_monto = dff.copy()
+        dist_monto["Tipo Simplificado"] = dist_monto["Tipo Simplificado"].replace(_TIPO_RENAME)
+        dist_monto = dist_monto.groupby("Tipo Simplificado")["Importe DRC"].sum().reset_index()
         dist_monto.columns = ["Tipo", "Monto"]
         fig2 = px.pie(dist_monto, names="Tipo", values="Monto",
                       color="Tipo", color_discrete_map=COLORES_TIPO,
@@ -619,71 +610,70 @@ def pagina_descripcion():
             Unidades Compradoras, lo que puede señalar dependencia excesiva, riesgos de corrupción
             o captura del proceso de contratación.
 
-            - **Top 10 proveedores por monto** — los proveedores que concentran el mayor valor
-              contratado. Una alta concentración puede indicar falta de competencia real.
-            - **Top 10 UCs por % de adjudicación directa** — Unidades Compradoras donde la mayor
-              parte del presupuesto se ejerce sin concurso. El umbral de referencia es el 35 % del monto
-              (complemento de la meta presidencial del 65 % por licitación pública).
-            - El **% del monto en AD** se calcula como monto adjudicado directamente / monto total de la UC.
+            - **TreeMap de proveedores** — los proveedores que concentran el mayor valor contratado.
+              El tamaño de cada celda es proporcional al monto. Una alta concentración puede indicar
+              falta de competencia real.
+            - **TreeMap de Unidades Compradoras** — las UCs con mayor monto contratado en el período.
+              Permite identificar qué dependencias ejercen el mayor presupuesto.
             """
         )
 
     col_c, col_d = st.columns(2)
 
     with col_c:
-        st.markdown("**Top 10 proveedores por monto contratado**")
+        st.markdown("**Proveedores por monto contratado**")
         top_prov = (dff.groupby("Proveedor o contratista")["Importe DRC"]
-                    .sum().sort_values(ascending=False).head(10).reset_index())
+                    .sum().sort_values(ascending=False).head(20).reset_index())
         top_prov.columns = ["Proveedor", "Monto"]
         top_prov["Monto_fmt"] = top_prov["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
-        # Truncar nombres para que las barras tengan más espacio horizontal
-        top_prov["Proveedor_corto"] = top_prov["Proveedor"].apply(
-            lambda s: s[:32] + "…" if len(str(s)) > 32 else s
+        fig3 = px.treemap(
+            top_prov,
+            path=["Proveedor"],
+            values="Monto",
+            color="Monto",
+            color_continuous_scale=[[0, IMSS_VERDE_OSC], [1, IMSS_VERDE]],
+            custom_data=["Monto_fmt"],
         )
-        fig3 = px.bar(top_prov.sort_values("Monto"), x="Monto", y="Proveedor_corto",
-                      orientation="h", text="Monto_fmt",
-                      color_discrete_sequence=[IMSS_VERDE],
-                      custom_data=["Proveedor"])
-        fig3.update_layout(font=plotly_font(), xaxis_title="Monto (MXN)", yaxis_title="",
-                           showlegend=False, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-                           margin=dict(l=10))
         fig3.update_traces(
-            marker_color=IMSS_VERDE,
-            textfont=dict(family="Noto Sans, sans-serif"),
-            hovertemplate="<b>%{customdata[0]}</b><br>Monto: %{x:,.0f} MXN<extra></extra>"
+            texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+            hovertemplate="<b>%{label}</b><br>Monto: %{customdata[0]}<extra></extra>",
+            textfont=dict(family="Noto Sans, sans-serif", size=12),
+        )
+        fig3.update_layout(
+            font=plotly_font(),
+            paper_bgcolor="#ffffff",
+            margin=dict(t=10, l=0, r=0, b=0),
+            height=380,
+            coloraxis_showscale=False,
         )
         st.plotly_chart(fig3, use_container_width=True)
 
     with col_d:
-        st.markdown("**Top 10 UCs — % del monto en Adjudicación Directa**")
-        _monto_uc_total = dff.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_total")
-        _monto_uc_ad    = (dff[dff["Tipo Simplificado"].isin(["Adjudicación Directa", "Adjudicación Directa — Fr. I"])]
-                           .groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_AD"))
-        _pct_ad_uc = pd.concat([_monto_uc_total, _monto_uc_ad], axis=1).fillna(0).reset_index()
-        _pct_ad_uc["Pct_AD"] = (
-            _pct_ad_uc["Monto_AD"] / _pct_ad_uc["Monto_total"].replace(0, pd.NA) * 100
-        ).fillna(0)
-        _pct_ad_uc = (
-            _pct_ad_uc[_pct_ad_uc["Monto_total"] > 0]
-            .sort_values("Pct_AD", ascending=False)
-            .head(10)
+        st.markdown("**Unidades Compradoras por monto contratado**")
+        _uc_monto = (dff.groupby("Nombre de la UC")["Importe DRC"]
+                     .sum().sort_values(ascending=False).head(20).reset_index())
+        _uc_monto.columns = ["UC", "Monto"]
+        _uc_monto["Monto_fmt"] = _uc_monto["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
+        fig4 = px.treemap(
+            _uc_monto,
+            path=["UC"],
+            values="Monto",
+            color="Monto",
+            color_continuous_scale=[[0, IMSS_ROJO_OSC], [1, IMSS_ROJO]],
+            custom_data=["Monto_fmt"],
         )
-        _pct_ad_uc["Pct_fmt"] = _pct_ad_uc["Pct_AD"].apply(lambda x: f"{x:.1f}%")
-        _pct_ad_uc["UC_corta"] = _pct_ad_uc["Nombre de la UC"].apply(
-            lambda s: s[:45] + "…" if len(s) > 45 else s
-        )
-        fig4 = px.bar(
-            _pct_ad_uc.sort_values("Pct_AD"),
-            x="Pct_AD", y="UC_corta",
-            orientation="h", text="Pct_fmt",
-            color_discrete_sequence=[IMSS_ROJO]
+        fig4.update_traces(
+            texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+            hovertemplate="<b>%{label}</b><br>Monto: %{customdata[0]}<extra></extra>",
+            textfont=dict(family="Noto Sans, sans-serif", size=12),
         )
         fig4.update_layout(
             font=plotly_font(),
-            xaxis_title="% del monto de la UC en Adjudicación Directa",
-            yaxis_title="", plot_bgcolor="#ffffff", paper_bgcolor="#ffffff"
+            paper_bgcolor="#ffffff",
+            margin=dict(t=10, l=0, r=0, b=0),
+            height=380,
+            coloraxis_showscale=False,
         )
-        fig4.update_traces(marker_color=IMSS_ROJO, textfont=dict(family="Noto Sans, sans-serif"))
         st.plotly_chart(fig4, use_container_width=True)
 
     if len(top_prov) >= 3 and monto_total > 0:
@@ -790,26 +780,31 @@ def pagina_descripcion():
     gasto_partida["Tooltip"] = gasto_partida[titulo_eje]
 
     if len(gasto_partida) > 0:
-        fig_part = px.bar(
-            gasto_partida.sort_values("Monto"),
-            x="Monto", y="Etiqueta",
-            orientation="h", text="Monto_fmt",
-            custom_data=["Tooltip"],
-            color_discrete_sequence=[IMSS_VERDE_OSC],
-            title=f"Top {top_n} por {titulo_eje.lower()} — monto contratado"
+        _titulo_part = (
+            f"Top {top_n} por {titulo_eje.lower()}"
             + (f" · UC: {uc_sel}" if uc_sel != "Todas las UCs" else "")
         )
+        fig_part = px.treemap(
+            gasto_partida,
+            path=["Etiqueta"],
+            values="Monto",
+            color="Monto",
+            color_continuous_scale=[[0, IMSS_VERDE_OSC], [1, IMSS_VERDE]],
+            custom_data=["Tooltip", "Monto_fmt"],
+            title=_titulo_part,
+        )
         fig_part.update_traces(
-            textfont=dict(family="Noto Sans, sans-serif"),
-            hovertemplate="<b>%{customdata[0]}</b><br>Monto: %{text}<extra></extra>"
+            texttemplate="<b>%{label}</b><br>%{customdata[1]}",
+            hovertemplate="<b>%{customdata[0]}</b><br>Monto: %{customdata[1]}<extra></extra>",
+            textfont=dict(family="Noto Sans, sans-serif", size=11),
         )
         fig_part.update_layout(
-            font=plotly_font(), xaxis_title="Monto (MXN)", yaxis_title="",
-            showlegend=False, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-            height=max(420, top_n * 30),
+            font=plotly_font(),
+            paper_bgcolor="#ffffff",
             title_font_color=IMSS_VERDE_OSC,
-            yaxis=dict(tickfont=dict(size=11, family="Noto Sans, sans-serif")),
-            margin=dict(l=10)
+            margin=dict(t=40, l=0, r=0, b=0),
+            height=max(440, top_n * 18),
+            coloraxis_showscale=False,
         )
         st.plotly_chart(fig_part, use_container_width=True)
 
@@ -909,6 +904,49 @@ def pagina_descripcion():
             margin=dict(t=30, b=40)
         )
         st.plotly_chart(fig6, use_container_width=True)
+
+    # ── Timeline mensual de contratos ────────────────────────────
+    st.markdown("**Contratos adjudicados por mes y tipo de procedimiento**")
+    _dff_tl = dff.copy()
+    _dff_tl["Tipo Display"] = _dff_tl["Tipo Simplificado"].replace(
+        {"Adjudicación Directa — Fr. I": "Adjudicación Directa — Patentes"}
+    )
+    _dff_tl["_mes"] = pd.to_datetime(
+        _dff_tl["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
+    ).dt.to_period("M").astype(str)
+    _tl_data = (
+        _dff_tl[_dff_tl["_mes"].notna()]
+        .groupby(["_mes", "Tipo Display"])
+        .agg(Contratos=("Importe DRC", "count"), Monto=("Importe DRC", "sum"))
+        .reset_index()
+        .rename(columns={"_mes": "Mes"})
+    )
+    if len(_tl_data) > 0:
+        _colores_tl = {k.replace("Adjudicación Directa — Fr. I", "Adjudicación Directa — Patentes"): v
+                       for k, v in COLORES_TIPO.items()}
+        fig_tl = px.bar(
+            _tl_data,
+            x="Mes", y="Contratos",
+            color="Tipo Display",
+            color_discrete_map=_colores_tl,
+            barmode="stack",
+            custom_data=["Tipo Display", "Monto"],
+        )
+        fig_tl.update_traces(
+            hovertemplate="<b>%{x}</b> · %{customdata[0]}<br>"
+                          "Contratos: %{y:,}<br>"
+                          "Monto: $%{customdata[1]:,.0f}<extra></extra>",
+        )
+        fig_tl.update_layout(
+            font=plotly_font(),
+            xaxis_title="", yaxis_title="Número de contratos",
+            legend_title="Tipo",
+            legend=dict(orientation="h", y=-0.2, font=dict(size=10)),
+            plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            height=320,
+            margin=dict(t=10, b=60),
+        )
+        st.plotly_chart(fig_tl, use_container_width=True)
 
     # ════════════════════════════════════════════════════════════
     # TOP 20 CONTRATOS DE MAYOR RIESGO COMPUESTO
@@ -1160,7 +1198,7 @@ def pagina_descripcion():
             if _f_rc.loc[_ix]:    _parts.append("🟡 Reciente creación")
             _tp = _tipo_r.loc[_ix]
             if _tp == "Adjudicación Directa":         _parts.append("🔴 Adj. directa")
-            elif _tp == "Adjudicación Directa — Fr. I": _parts.append("⚪ AD Fr. I")
+            elif _tp == "Adjudicación Directa — Fr. I": _parts.append("⚪ AD — Patentes")
             elif _tp == "Invitación a 3 personas":      _parts.append("🟡 Inv. 3 personas")
             _alerta_parts.append(" · ".join(_parts) if _parts else "—")
 
