@@ -47,7 +47,8 @@ COLORES_TIPO = {
 st.set_page_config(
     page_title="Dashboard de Integridad – ComprasMX 2026",
     page_icon="🔍",
-    layout="wide"
+    layout="wide",
+    menu_items={}
 )
 
 # CSS: tipografía NotoSans + estilos institucionales
@@ -106,6 +107,13 @@ hr { border-color: #0B5445; opacity: 0.3; }
     font-family: 'Noto Sans', sans-serif !important;
     font-weight: 600 !important;
 }
+
+/* Ocultar branding de Streamlit */
+#MainMenu                        { visibility: hidden !important; }
+footer                           { visibility: hidden !important; }
+[data-testid="stToolbar"]        { visibility: hidden !important; }
+[data-testid="stDecoration"]     { display: none !important; }
+[data-testid="stStatusWidget"]   { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
