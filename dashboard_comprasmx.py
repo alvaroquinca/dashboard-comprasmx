@@ -603,8 +603,8 @@ def pagina_descripcion():
     if _pct_ad_monto > 35:
         st.warning(
             f"⚠️ **Alerta:** El **{_pct_ad_monto:.1f}%** del monto contratado corresponde a "
-            f"adjudicaciones directas, superando el umbral de referencia del 35% "
-            f"(complemento de la meta presidencial del 65% por licitación pública)."
+            f"adjudicaciones directas. La licitación pública es la regla general (Art. 35 LAASSP 2025); "
+            f"un porcentaje elevado de AD puede indicar uso excesivo de procedimientos de excepción."
         )
 
     st.divider()
@@ -912,6 +912,130 @@ def pagina_descripcion():
             margin=dict(t=30, b=40)
         )
         st.plotly_chart(fig6, use_container_width=True)
+
+    # ── Mipyme / Cooperativa — Reglamento Art. 113 ──────────────────
+    st.markdown("**Cumplimiento del cupo Mipyme y Cooperativa (Reglamento LAASSP Art. 113)**")
+    st.caption(
+        "El Art. 113 del Reglamento LAASSP establece que en adjudicaciones directas (Art. 55 LAASSP), "
+        "**≥ 50%** del monto debe contratarse con **Mipymes**, y de ese monto Mipyme, "
+        "**≥ 25%** debe ir a **cooperativas** (i.e., ≥ 12.5% del total AD). "
+        "El análisis se realiza sobre todos los contratos del año en vista con la selección de filtros actual."
+    )
+
+    # Adjudicaciones directas (todas las causales) del conjunto filtrado
+    _dff_ad_m = dff[dff["Tipo Simplificado"].str.contains("Adjudicación Directa", na=False)].copy()
+    _dff_ad_m["_estrat_norm"] = _dff_ad_m["Estratificación"].fillna("").str.upper().str.strip()
+
+    # Mipymes: Micro, Pequeña, Mediana
+    _mipyme_vals = {"MICRO", "PEQUEÑA", "MEDIANA", "PEQUEÃ'A", "PEQUEA"}
+    _dff_ad_mipyme = _dff_ad_m[_dff_ad_m["_estrat_norm"].isin(_mipyme_vals)]
+
+    # Cooperativas: keyword en nombre del proveedor o estratificación con COOP
+    _prov_up = _dff_ad_m["Proveedor o contratista"].fillna("").str.upper()
+    _dff_ad_coop = _dff_ad_m[
+        _prov_up.str.contains(r"COOPERATIVA|S\.C\.L\.|S\.C\b", na=False, regex=True)
+    ]
+
+    monto_ad_m      = _dff_ad_m["Importe DRC"].sum()
+    monto_mipyme_ad = _dff_ad_mipyme["Importe DRC"].sum()
+    monto_coop_ad   = _dff_ad_coop["Importe DRC"].sum()
+
+    pct_mipyme_ad = monto_mipyme_ad / monto_ad_m * 100 if monto_ad_m > 0 else 0
+    pct_coop_of_mipyme = monto_coop_ad / monto_mipyme_ad * 100 if monto_mipyme_ad > 0 else 0
+    pct_coop_ad   = monto_coop_ad / monto_ad_m * 100 if monto_ad_m > 0 else 0
+
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    _m1.metric("💰 Monto AD total", f"${monto_ad_m/1e6:,.1f} M MXN")
+    _m2.metric(
+        "🏭 Mipyme — % del monto AD",
+        f"{pct_mipyme_ad:.1f}%",
+        delta=f"{pct_mipyme_ad - 50:.1f} pp vs objetivo 50%",
+        delta_color="normal" if pct_mipyme_ad >= 50 else "inverse"
+    )
+    _m3.metric(
+        "🤝 Cooperativas — % del monto AD",
+        f"{pct_coop_ad:.1f}%",
+        delta=f"{pct_coop_of_mipyme - 25:.1f} pp (coop/mipyme vs 25%)",
+        delta_color="normal" if pct_coop_of_mipyme >= 25 else "inverse"
+    )
+    _m4.metric("📋 Contratos a Mipymes", f"{len(_dff_ad_mipyme):,}")
+
+    # Banner de cumplimiento
+    if monto_ad_m > 0:
+        _alerts_mipyme = []
+        if pct_mipyme_ad < 50:
+            _alerts_mipyme.append(f"Mipyme: {pct_mipyme_ad:.1f}% < 50% requerido")
+        if pct_coop_of_mipyme < 25 and monto_mipyme_ad > 0:
+            _alerts_mipyme.append(f"Cooperativas: {pct_coop_of_mipyme:.1f}% del monto Mipyme < 25% requerido")
+        if _alerts_mipyme:
+            st.warning(
+                "⚠️ **Posible incumplimiento del cupo Mipyme/Cooperativa (Reglamento Art. 113):** "
+                + " | ".join(_alerts_mipyme)
+                + ". Nota: el cálculo se basa en la columna 'Estratificación' del sistema."
+            )
+        else:
+            st.success(
+                f"✅ Se cumple el cupo Mipyme ({pct_mipyme_ad:.1f}% ≥ 50%) y "
+                f"cooperativas ({pct_coop_of_mipyme:.1f}% del monto Mipyme ≥ 25%) sobre el monto de AD."
+            )
+
+    # Gráfica de barras por UC — distribución Mipyme vs Grande en AD
+    with st.expander("📊 Distribución Mipyme/Grande por Unidad Compradora (AD)"):
+        if monto_ad_m == 0:
+            st.info("No hay adjudicaciones directas con los filtros actuales.")
+        else:
+            _by_uc_m = (
+                _dff_ad_m.groupby(["Nombre de la UC", "_estrat_norm"])["Importe DRC"]
+                .sum().reset_index()
+            )
+            _by_uc_m["Categoría"] = _by_uc_m["_estrat_norm"].apply(
+                lambda x: "Mipyme" if x in _mipyme_vals else ("Cooperativa" if "COOP" in x else "Grande / Otro")
+            )
+            _by_uc_grp = _by_uc_m.groupby(["Nombre de la UC", "Categoría"])["Importe DRC"].sum().reset_index()
+            _totals_uc_m = _by_uc_grp.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Total")
+            _by_uc_grp = _by_uc_grp.merge(_totals_uc_m, on="Nombre de la UC")
+            _by_uc_grp["Pct"] = _by_uc_grp["Importe DRC"] / _by_uc_grp["Total"] * 100
+
+            _top_uc_m = (
+                _totals_uc_m.nlargest(20).index.tolist()
+            )
+            _by_uc_plot = _by_uc_grp[_by_uc_grp["Nombre de la UC"].isin(_top_uc_m)].copy()
+            _by_uc_plot["UC_corta"] = _by_uc_plot["Nombre de la UC"].apply(
+                lambda s: s[:45] + "…" if len(s) > 45 else s
+            )
+            _ord_uc_m = (
+                _by_uc_plot[_by_uc_plot["Categoría"] == "Mipyme"]
+                .sort_values("Pct")["UC_corta"].tolist()
+            )
+            fig_mipyme = px.bar(
+                _by_uc_plot, x="Pct", y="UC_corta",
+                color="Categoría",
+                color_discrete_map={
+                    "Mipyme": IMSS_VERDE, "Cooperativa": IMSS_ORO, "Grande / Otro": IMSS_ROJO
+                },
+                orientation="h",
+                barmode="stack",
+                category_orders={"UC_corta": _ord_uc_m},
+                title="% del monto AD por categoría Mipyme — top 20 UCs",
+                text=_by_uc_plot["Pct"].apply(lambda x: f"{x:.0f}%" if x >= 8 else ""),
+            )
+            fig_mipyme.add_vline(
+                x=50, line_dash="dash", line_color=IMSS_ORO_CLARO,
+                annotation_text="50% objetivo Mipyme",
+                annotation_position="top right",
+                annotation_font=dict(family="Noto Sans, sans-serif", size=11)
+            )
+            fig_mipyme.update_layout(
+                font=plotly_font(), xaxis_title="% del monto AD",
+                yaxis_title="", plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                xaxis=dict(range=[0, 105]),
+                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0)
+            )
+            fig_mipyme.update_traces(
+                textfont=dict(family="Noto Sans, sans-serif"),
+                textposition="inside"
+            )
+            st.plotly_chart(fig_mipyme, use_container_width=True)
 
     # ── Timeline mensual de contratos ────────────────────────────
     st.markdown("**Monto contratado por mes y tipo de procedimiento**")
@@ -2044,12 +2168,12 @@ def pagina_riesgo():
 
     st.divider()
 
-    # ── SECCIÓN 8: TIPO DE PROCEDIMIENTO — MANDATO 65% LICITACIÓN PÚBLICA ──
-    st.subheader("8️⃣ Tipo de Procedimiento — Mandato del 65% por Licitación Pública")
+    # ── SECCIÓN 8: TIPO DE PROCEDIMIENTO — DISTRIBUCIÓN POR TIPO ──
+    st.subheader("8️⃣ Tipo de Procedimiento — Distribución por Tipo de Procedimiento")
     st.caption(
-        "Indicación presidencial: al menos el **65%** del monto contratado debe ejercerse mediante "
-        "licitación pública. Las adjudicaciones directas por **Fracción I** (patentes, licencias, "
-        "oferente único u obras de arte — Art. 54 Fr. I LAASSP) se separan por su naturaleza estructural."
+        "La licitación pública es la **regla general** del sistema de contrataciones (Art. 35 LAASSP 2025). "
+        "Las adjudicaciones directas por **Fracción I** (patentes, licencias exclusivas u oferente único — "
+        "Art. 54 Fr. I) se separan por su naturaleza estructural, al no depender de discrecionalidad."
     )
 
     # Categorizar contratos en 4 grupos de análisis
@@ -2077,9 +2201,7 @@ def pagina_riesgo():
     s1, s2, s3, s4 = st.columns(4)
     s1.metric(
         "🟢 % LP del monto total",
-        f"{pct_lp_m:.1f}%",
-        delta=f"{pct_lp_m - 65:.1f} pp vs meta 65%",
-        delta_color="normal" if pct_lp_m >= 65 else "inverse"
+        f"{pct_lp_m:.1f}%"
     )
     s2.metric("📋 Contratos LP",              f"{n_lp:,}")
     s3.metric(
@@ -2090,19 +2212,6 @@ def pagina_riesgo():
         "🟡 AD Fracc. I — Patente (% monto)",
         f"{pct_frac1_m:.1f}%  ({n_frac1:,} contratos)"
     )
-
-    # Banner global
-    if pct_lp_m >= 65:
-        st.success(
-            f"✅ El **{pct_lp_m:.1f}%** del monto contratado corresponde a licitaciones públicas, "
-            f"cumpliendo la meta presidencial del 65%."
-        )
-    else:
-        brecha = 65 - pct_lp_m
-        st.error(
-            f"🚨 **INCUMPLIMIENTO:** Solo el **{pct_lp_m:.1f}%** del monto fue contratado por "
-            f"licitación pública. Se requiere aumentar **{brecha:.1f} pp** para alcanzar la meta del 65%."
-        )
 
     # ── Gráfica de composición del gasto por tipo ──
     _resumen_tipo = pd.DataFrame({
@@ -2172,35 +2281,23 @@ def pagina_riesgo():
     _by_uc8["Pct_LP"] = (
         _by_uc8["Licitación pública"] / _by_uc8["Monto_total"].replace(0, pd.NA) * 100
     ).fillna(0)
-    _by_uc8["Cumple"] = _by_uc8["Pct_LP"] >= 65
-
     # Top 30 UCs por monto total
     _top30 = _by_uc8.nlargest(30, "Monto_total").sort_values("Pct_LP")
     _top30["UC_corta"] = _top30["Nombre de la UC"].apply(
         lambda s: s[:50] + "…" if len(s) > 50 else s
     )
-    _top30["Color"]        = _top30["Cumple"].map({True: IMSS_VERDE, False: IMSS_ROJO})
-    _top30["Cumple_label"] = _top30["Cumple"].map({True: "Verdadero", False: "Falso"})
 
     fig_uc8 = px.bar(
         _top30, x="Pct_LP", y="UC_corta",
         orientation="h",
-        color="Cumple_label",
-        color_discrete_map={"Verdadero": IMSS_VERDE, "Falso": IMSS_ROJO},
         text=_top30["Pct_LP"].apply(lambda x: f"{x:.1f}%"),
         title="% del gasto por licitación pública — top 30 UCs por monto",
         custom_data=["Nombre de la UC", "Monto_total"]
     )
-    fig_uc8.add_vline(
-        x=65, line_dash="dash", line_color=IMSS_ORO,
-        annotation_text="Meta 65%", annotation_position="top right",
-        annotation_font=dict(family="Noto Sans, sans-serif", color=IMSS_ORO, size=12)
-    )
+    fig_uc8.update_traces(marker_color=IMSS_VERDE)
     fig_uc8.update_layout(
         font=plotly_font(), xaxis_title="% del monto contratado por LP",
-        yaxis_title="", showlegend=True,
-        legend=dict(title="¿Cumple meta 65%?",
-                    orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+        yaxis_title="", showlegend=False,
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis=dict(range=[0, 105])
     )
@@ -2223,8 +2320,7 @@ def pagina_riesgo():
         _tbl8["Invitación a 3 personas"] = _tbl8["Invitación a 3 personas"].apply(lambda x: f"${x:,.0f}")
         _tbl8["Monto_total"]             = _tbl8["Monto_total"].apply(lambda x: f"${x:,.0f}")
         _tbl8["Pct_LP"]                  = _tbl8["Pct_LP"].apply(lambda x: f"{x:.1f}%")
-        _tbl8["¿Cumple 65%?"]            = _tbl8["Cumple"].map({True: "✅ Sí", False: "❌ No"})
-        _tbl8 = _tbl8.drop(columns=["Cumple", "UC_corta", "Entre Entes Públicos"], errors="ignore")
+        _tbl8 = _tbl8.drop(columns=["UC_corta", "Entre Entes Públicos"], errors="ignore")
         _tbl8 = _tbl8.rename(columns={"Nombre de la UC": "Unidad Compradora",
                                        "Monto_total": "Monto total"})
         _tbl8 = _tbl8.reset_index(drop=True)
@@ -2233,24 +2329,40 @@ def pagina_riesgo():
 
     st.divider()
 
-    # ── SECCIÓN 9: CONTRATOS POR CASO FORTUITO O FUERZA MAYOR ──
-    st.subheader("9️⃣ Contratos por Caso Fortuito o Fuerza Mayor (Art. 54 Fr. II LAASSP)")
+    # ── SECCIÓN 9: CONTRATOS POR CASO FORTUITO / URGENCIA ──
+    st.subheader("9️⃣ Contratos por Caso Fortuito (Fr. II) y Tiempo de Urgencia (Fr. V) — Art. 54 LAASSP")
     st.caption(
-        "Los contratos bajo esta excepción deben responder a situaciones **imprevisibles**. "
-        "Un porcentaje elevado por Unidad Compradora puede reflejar **falta de planeación** "
-        "más que emergencias reales."
+        "**Fr. II — Caso fortuito o fuerza mayor:** eventos imprevisibles que impiden licitación. "
+        "**Fr. V — Tiempo de urgencia:** circunstancias urgentes *no atribuibles a falta de planeación* "
+        "que no pueden atenderse por licitación. La ley explícitamente excluye la falta de planeación como "
+        "justificación para Fr. V — un patrón recurrente en la misma UC puede indicar uso indebido de esta excepción."
     )
 
     caso_f9 = _dff2[
         _dff2["Descripción excepción"].str.upper().str.contains("CASO FORTUITO", na=False)
     ].copy()
 
+    # Fr. V — Tiempo de urgencia (Art. 54 Fr. V LAASSP)
+    _desc_exc_up = _dff2["Descripción excepción"].str.upper()
+    _art_exc_up  = _dff2["Artículo de excepción"].str.upper() if "Artículo de excepción" in _dff2.columns else pd.Series("", index=_dff2.index)
+    _mask_frv = (
+        (_desc_exc_up.str.contains("URGENCIA", na=False) | _art_exc_up.str.contains("FRACC.*V|FR.*V\b|FRACCIÓN V", na=False, regex=True))
+        & ~_desc_exc_up.str.contains("CASO FORTUITO", na=False)
+    )
+    frac5_f9 = _dff2[_mask_frv].copy()
+
     n_cf9      = len(caso_f9)
     monto_cf9  = caso_f9["Importe DRC"].sum()
     pct_cf9    = monto_cf9 / _monto_total2 * 100 if _monto_total2 > 0 else 0
     n_uc_cf9   = caso_f9["Nombre de la UC"].nunique()
 
-    # KPIs
+    n_frv      = len(frac5_f9)
+    monto_frv  = frac5_f9["Importe DRC"].sum()
+    pct_frv    = monto_frv / _monto_total2 * 100 if _monto_total2 > 0 else 0
+    n_uc_frv   = frac5_f9["Nombre de la UC"].nunique()
+
+    # KPIs — Fr. II
+    st.markdown("##### Art. 54 Fr. II — Caso fortuito o fuerza mayor")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("⚡ Contratos caso fortuito",   f"{n_cf9:,}")
     c2.metric("🏥 UCs con caso fortuito",    f"{n_uc_cf9:,}")
@@ -2258,6 +2370,9 @@ def pagina_riesgo():
               f"${monto_cf9/1e9:,.2f} miles de millones MXN" if monto_cf9 >= 1e9
               else f"${monto_cf9/1e6:,.1f} M MXN")
     c4.metric("📊 % del gasto total",        f"{pct_cf9:.1f}%")
+
+    # Monto total por UC (usado por Fr. II y Fr. V)
+    _monto_uc_total = _dff2.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_uc")
 
     if n_cf9 == 0:
         st.success("✅ No se detectaron contratos por caso fortuito con los filtros actuales.")
@@ -2269,7 +2384,6 @@ def pagina_riesgo():
         )
 
         # ── % de caso fortuito por UC (top 20 por monto) ──
-        _monto_uc_total = _dff2.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_uc")
         _monto_uc_cf    = caso_f9.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_cf")
 
         _cf_uc = pd.concat([_monto_uc_cf, _monto_uc_total], axis=1).fillna(0).reset_index()
@@ -2338,6 +2452,97 @@ def pagina_riesgo():
             },
             use_container_width=True
         )
+
+    # ── Fr. V — Tiempo de urgencia ──
+    st.markdown("---")
+    st.markdown("##### Art. 54 Fr. V — Tiempo de urgencia")
+    st.caption(
+        "La Fr. V requiere que la urgencia **no sea resultado de falta de planeación** (Art. 54 Fr. V LAASSP 2025). "
+        "Contratos recurrentes bajo esta fracción en la misma Unidad Compradora son una señal de alerta."
+    )
+
+    # KPIs Fr. V
+    v1, v2, v3, v4 = st.columns(4)
+    v1.metric("⏱️ Contratos Fr. V (urgencia)",  f"{n_frv:,}")
+    v2.metric("🏥 UCs con Fr. V",               f"{n_uc_frv:,}")
+    v3.metric("💰 Monto total",
+              f"${monto_frv/1e9:,.2f} miles de millones MXN" if monto_frv >= 1e9
+              else f"${monto_frv/1e6:,.1f} M MXN")
+    v4.metric("📊 % del gasto total",           f"{pct_frv:.1f}%")
+
+    if n_frv == 0:
+        st.success("✅ No se detectaron contratos por Fr. V (urgencia) con los filtros actuales.")
+    else:
+        st.warning(
+            f"⚠️ **{n_frv:,} contratos** por tiempo de urgencia (Fr. V) suman "
+            f"**${monto_frv/1e6:,.1f} M MXN** ({pct_frv:.1f}% del gasto total). "
+            f"Verificar que ninguno sea atribuible a falta de planeación."
+        )
+
+        # Tabla Fr. V con link ComprasMX
+        st.markdown("**📋 Contratos bajo Art. 54 Fr. V — Verificar falta de planeación**")
+        _cols_frv = [c for c in [
+            "Nombre de la UC", "Proveedor o contratista",
+            "Importe DRC", "Descripción del contrato",
+            "Descripción excepción", "Artículo de excepción",
+            "Fecha de fallo", "Dirección del anuncio"
+        ] if c in frac5_f9.columns]
+        _tabla_frv = (
+            frac5_f9[_cols_frv]
+            .sort_values("Importe DRC", ascending=False)
+            .head(100)
+            .reset_index(drop=True)
+        )
+        _tabla_frv["Importe DRC"] = _tabla_frv["Importe DRC"].apply(
+            lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
+        )
+        _tabla_frv.index += 1
+        st.dataframe(
+            _tabla_frv,
+            column_config={
+                "Dirección del anuncio": st.column_config.LinkColumn(
+                    "🔗 ComprasMX", display_text="Ver contrato"
+                )
+            },
+            use_container_width=True
+        )
+
+        # % de Fr. V por UC (top 15 por monto)
+        with st.expander("📊 % de gasto Fr. V por Unidad Compradora"):
+            _monto_uc_frv = frac5_f9.groupby("Nombre de la UC")["Importe DRC"].sum().rename("Monto_frv")
+            _cf_uc_frv = pd.concat([_monto_uc_frv, _monto_uc_total], axis=1).fillna(0).reset_index()
+            _cf_uc_frv.columns = ["Nombre de la UC", "Monto_frv", "Monto_uc"]
+            _cf_uc_frv["Pct_FrV"] = (
+                _cf_uc_frv["Monto_frv"] / _cf_uc_frv["Monto_uc"].replace(0, pd.NA) * 100
+            ).fillna(0)
+            _cf_uc_frv = _cf_uc_frv[_cf_uc_frv["Monto_frv"] > 0]
+            _top15_frv = _cf_uc_frv.nlargest(15, "Monto_frv").sort_values("Pct_FrV")
+            _top15_frv["UC_corta"] = _top15_frv["Nombre de la UC"].apply(
+                lambda s: s[:50] + "…" if len(s) > 50 else s
+            )
+            fig_frv = px.bar(
+                _top15_frv, x="Pct_FrV", y="UC_corta",
+                orientation="h",
+                text=_top15_frv["Pct_FrV"].apply(lambda x: f"{x:.1f}%"),
+                title="% del gasto por UC bajo Fr. V — urgencia (top 15 por monto)",
+                custom_data=["Nombre de la UC", "Monto_frv"]
+            )
+            fig_frv.update_traces(
+                marker_color=IMSS_ORO,
+                textfont=dict(family="Noto Sans, sans-serif"),
+                textposition="outside", cliponaxis=False,
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "Fr. V: $%{customdata[1]:,.0f}<br>"
+                    "% urgencia: %{x:.1f}%<extra></extra>"
+                )
+            )
+            fig_frv.update_layout(
+                font=plotly_font(), xaxis_title="% del gasto de la UC",
+                yaxis_title="", showlegend=False,
+                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff"
+            )
+            st.plotly_chart(fig_frv, use_container_width=True)
 
     st.divider()
 
@@ -3450,9 +3655,7 @@ def pagina_historica():
                 st.metric("📄 Contratos", f"{int(_r['Contratos']):,}")
                 st.metric(
                     "🟢 % Licitación Pública",
-                    f"{_r['Pct_LP']:.1f}%",
-                    delta=f"{_r['Pct_LP'] - 65:.1f} pp vs meta 65%",
-                    delta_color="normal" if _r["Pct_LP"] >= 65 else "inverse"
+                    f"{_r['Pct_LP']:.1f}%"
                 )
                 st.metric("🔴 % AD otras causales", f"{_r['Pct_AD']:.1f}%")
                 st.metric("⚡ % Caso fortuito",     f"{_r['Pct_CF']:.1f}%")
@@ -3498,7 +3701,7 @@ def pagina_historica():
         )
         fig_pct_h.add_hline(
             y=65, line_dash="dash", line_color=IMSS_ORO,
-            annotation_text="Meta 65%", annotation_position="top right",
+            annotation_text="Referencia 65% LP", annotation_position="top right",
             annotation_font=dict(family="Noto Sans, sans-serif", color=IMSS_ORO, size=12)
         )
         fig_pct_h.update_layout(
@@ -3554,7 +3757,7 @@ def pagina_historica():
             if _met_sel_h == "% Licitación Pública":
                 fig_uc_h.add_hline(
                     y=65, line_dash="dash", line_color=IMSS_ORO,
-                    annotation_text="Meta 65%", annotation_position="top right",
+                    annotation_text="Referencia 65% LP", annotation_position="top right",
                     annotation_font=dict(family="Noto Sans, sans-serif",
                                          color=IMSS_ORO, size=11)
                 )
@@ -4744,9 +4947,7 @@ def pagina_mapa_riesgo():
     _nm3.metric("\U0001f3e2 Proveedores", f"{_n_prov_mr:,}")
     _nm4.metric(
         "\U0001f7e2 % Monto LP",
-        f"{_pct_lp_mr:.1f}%",
-        delta=f"{_pct_lp_mr - 65:.1f} pp vs meta",
-        delta_color="normal" if _pct_lp_mr >= 65 else "inverse"
+        f"{_pct_lp_mr:.1f}%"
     )
     _nm5.metric("\U0001f534 % Monto AD", f"{_pct_ad_mr:.1f}%")
 
@@ -4959,10 +5160,10 @@ def pagina_mapa_riesgo():
         _riesgos_limpios.append("Fragmentaci\u00f3n (mismo d\u00eda)")
 
     # \u2500\u2500 F. Brecha LP \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    if _monto_mr > 0 and _pct_lp_mr < 65:
+    if _monto_mr > 0 and _pct_lp_mr < 50:
         _riesgos_activos.append(("brecha_lp", _pct_lp_mr))
     elif _monto_mr > 0:
-        _riesgos_limpios.append("Mandato 65 % LP \u2713")
+        _riesgos_limpios.append(f"LP {_pct_lp_mr:.1f}% (mayoritario)")
 
     # \u2500\u2500 G. Alta concentraci\u00f3n en AD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     _dff_ad_cg = _dff_sel[_dff_sel["Tipo Simplificado"].isin(
@@ -5194,14 +5395,13 @@ def pagina_mapa_riesgo():
                 st.dataframe(_disp_fd, use_container_width=True)
 
         elif _tr == "brecha_lp":
-            _brecha_v = 65 - _dr
             with st.expander(
-                f"\U0001f4c9 Brecha en mandato LP \u2014 {_dr:.1f}% LP actual (meta: 65%)"
+                f"\U0001f4c9 Baja proporci\u00f3n de LP \u2014 {_dr:.1f}% del monto por licitaci\u00f3n p\u00fablica"
             ):
-                (_color_fn := st.error if _dr < 40 else st.warning)(
+                st.warning(
                     f"El porcentaje del monto contratado mediante licitaci\u00f3n p\u00fablica es "
-                    f"**{_dr:.1f}%**, **{_brecha_v:.1f} puntos porcentuales** por debajo "
-                    f"de la meta institucional del **65 %**."
+                    f"**{_dr:.1f}%**. La licitaci\u00f3n p\u00fablica es la regla general (Art. 35 LAASSP 2025); "
+                    f"un porcentaje reducido puede indicar uso intensivo de procedimientos de excepci\u00f3n."
                 )
                 _tipo_dist_b = (
                     _dff_sel.groupby("Tipo Simplificado")["Importe DRC"].sum()
