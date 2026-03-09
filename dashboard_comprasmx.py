@@ -3515,6 +3515,140 @@ def pagina_explorador():
             key="dl_uc_e3"
         )
 
+    st.divider()
+
+    # ── BLOQUE 5: Explorador por Partida Presupuestaria ──────────────
+    st.subheader("📂 Explorador por Partida Presupuestaria")
+    st.caption(
+        "Selecciona una partida del CUCoP para ver todos los contratos asociados. "
+        "Filtra opcionalmente por Adscripción y Unidad Compradora."
+    )
+
+    # Catálogo de partidas disponibles en los datos (con descripción)
+    _part_cat = (
+        dff_uc_cucop[["Partida específica", "DESC. PARTIDA ESPECÍFICA"]]
+        .dropna(subset=["DESC. PARTIDA ESPECÍFICA"])
+        .drop_duplicates("Partida específica")
+        .sort_values("Partida específica")
+    )
+    _part_cat["_label"] = (
+        _part_cat["Partida específica"] + " — " + _part_cat["DESC. PARTIDA ESPECÍFICA"].str.title()
+    )
+    _part_labels = _part_cat["_label"].tolist()
+    _part_code_map = dict(zip(_part_cat["_label"], _part_cat["Partida específica"]))
+
+    if not _part_labels:
+        st.info("ℹ️ No hay partidas CUCoP disponibles con los filtros actuales.")
+    else:
+        # Filtros inline del Bloque 5
+        _b5c1, _b5c2, _b5c3 = st.columns([3, 2, 2])
+        with _b5c1:
+            _part_sel = st.selectbox(
+                "📑 Partida presupuestaria",
+                options=_part_labels,
+                index=0,
+                key="e3_b5_partida"
+            )
+        _part_codigo = _part_code_map.get(_part_sel, "")
+
+        # Adscripción (usa dff_uc completo para no depender del ámbito del radio)
+        _adsc_opts_b5 = sorted(dff_uc["Adscripción"].dropna().unique().tolist())
+        _adsc_opts_b5 = [a for a in _adsc_opts_b5 if a != "Sin clasificar"]
+        with _b5c2:
+            _adsc_b5 = st.selectbox(
+                "🏛️ Adscripción",
+                ["Todas"] + _adsc_opts_b5,
+                key="e3_b5_adsc"
+            )
+
+        # UC (se actualiza según Adscripción elegida)
+        _base_b5 = dff_uc.copy()
+        if _adsc_b5 != "Todas":
+            _base_b5 = _base_b5[_base_b5["Adscripción"] == _adsc_b5]
+        _uc_opts_b5 = sorted(_base_b5["Nombre de la UC"].dropna().unique().tolist())
+        with _b5c3:
+            _uc_b5 = st.selectbox(
+                "🏥 Unidad Compradora",
+                ["Todas"] + _uc_opts_b5,
+                key="e3_b5_uc"
+            )
+
+        # Filtrar contratos con la partida seleccionada
+        # La columna "Partida específica" puede contener listas separadas por coma
+        _mask_part = _base_b5["Partida específica"].fillna("").apply(
+            lambda x: _part_codigo in [p.strip().zfill(5) for p in str(x).split(",")]
+        )
+        _df_b5 = _base_b5[_mask_part].copy()
+        if _uc_b5 != "Todas":
+            _df_b5 = _df_b5[_df_b5["Nombre de la UC"] == _uc_b5]
+
+        # KPIs
+        _n_b5     = len(_df_b5)
+        _monto_b5 = _df_b5["Importe DRC"].sum()
+        _uc_b5n   = _df_b5["Nombre de la UC"].nunique()
+        _prov_b5  = _df_b5["Proveedor o contratista"].nunique()
+
+        _kb1, _kb2, _kb3, _kb4 = st.columns(4)
+        _kb1.metric("📄 Contratos",             f"{_n_b5:,}")
+        _kb2.metric("💰 Monto total",
+                    f"${_monto_b5/1e9:,.2f} miles de millones MXN" if _monto_b5 >= 1e9
+                    else f"${_monto_b5/1e6:,.1f} M MXN")
+        _kb3.metric("🏥 Unidades Compradoras",  f"{_uc_b5n:,}")
+        _kb4.metric("🏭 Proveedores únicos",    f"{_prov_b5:,}")
+
+        if _n_b5 == 0:
+            st.info(f"ℹ️ No se encontraron contratos para la partida **{_part_sel}** con los filtros seleccionados.")
+        else:
+            # Tabla de contratos
+            _cols_b5 = [c for c in [
+                "Nombre de la UC", "Adscripción",
+                "Proveedor o contratista", "rfc",
+                "Tipo Simplificado",
+                "Importe DRC",
+                "Fecha de inicio del contrato", "Fecha de término del contrato",
+                "Descripción del contrato",
+                "Dirección del anuncio"
+            ] if c in _df_b5.columns]
+            _tbl_b5 = (
+                _df_b5[_cols_b5]
+                .sort_values("Importe DRC", ascending=False)
+                .reset_index(drop=True)
+            )
+            _tbl_b5["Importe DRC"] = _tbl_b5["Importe DRC"].apply(
+                lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
+            )
+            _tbl_b5.index += 1
+
+            st.dataframe(
+                _tbl_b5,
+                column_config={
+                    "Dirección del anuncio": st.column_config.LinkColumn(
+                        "🔗 ComprasMX", display_text="Ver contrato"
+                    ),
+                    "Importe DRC": st.column_config.TextColumn("Importe DRC"),
+                },
+                use_container_width=True,
+                height=500
+            )
+
+            # Descarga CSV (con montos numéricos originales)
+            _tbl_b5_csv = (
+                _df_b5[_cols_b5]
+                .sort_values("Importe DRC", ascending=False)
+                .reset_index(drop=True)
+            )
+            _nombre_archivo = (
+                f"partida_{_part_codigo}_"
+                + (_adsc_b5.replace(" ", "_")[:20] if _adsc_b5 != "Todas" else "todas_adsc")
+                + ".csv"
+            )
+            st.download_button(
+                "📥 Descargar contratos (CSV)",
+                data=_tbl_b5_csv.to_csv(index=False).encode("utf-8-sig"),
+                file_name=_nombre_archivo,
+                mime="text/csv",
+                key="dl_b5_partida"
+            )
 
 
 # ───────────────────────────────────────────────────────────────
