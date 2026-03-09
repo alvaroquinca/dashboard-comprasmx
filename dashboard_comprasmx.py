@@ -2338,18 +2338,17 @@ def pagina_riesgo():
         "justificación para Fr. V — un patrón recurrente en la misma UC puede indicar uso indebido de esta excepción."
     )
 
-    caso_f9 = _dff2[
-        _dff2["Descripción excepción"].str.upper().str.contains("CASO FORTUITO", na=False)
-    ].copy()
+    # Fr. II — Caso fortuito (filtro por Artículo de excepción, con fallback a descripción)
+    _art_exc9 = _dff2["Artículo de excepción"].fillna("").str.upper().str.strip()
+    if _art_exc9.str.contains("ART. 54 FR. II", na=False).any():
+        caso_f9 = _dff2[_art_exc9 == "ART. 54 FR. II"].copy()
+    else:
+        caso_f9 = _dff2[
+            _dff2["Descripción excepción"].str.upper().str.contains("CASO FORTUITO", na=False)
+        ].copy()
 
-    # Fr. V — Tiempo de urgencia (Art. 54 Fr. V LAASSP)
-    _desc_exc_up = _dff2["Descripción excepción"].str.upper()
-    _art_exc_up  = _dff2["Artículo de excepción"].str.upper() if "Artículo de excepción" in _dff2.columns else pd.Series("", index=_dff2.index)
-    _mask_frv = (
-        (_desc_exc_up.str.contains("URGENCIA", na=False) | _art_exc_up.str.contains("FRACC.*V|FR.*V\b|FRACCIÓN V", na=False, regex=True))
-        & ~_desc_exc_up.str.contains("CASO FORTUITO", na=False)
-    )
-    frac5_f9 = _dff2[_mask_frv].copy()
+    # Fr. V — Tiempo de urgencia (filtro por Artículo de excepción)
+    frac5_f9 = _dff2[_art_exc9 == "ART. 54 FR. V"].copy()
 
     n_cf9      = len(caso_f9)
     monto_cf9  = caso_f9["Importe DRC"].sum()
