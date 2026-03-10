@@ -3689,30 +3689,33 @@ def pagina_explorador():
         )
         _ooad_grp6["Monto_M"] = _ooad_grp6["Importe DRC"] / 1e6
 
-        # Orden de OOAD: de mayor a menor monto total
+        # Renombrar "Adjudicación Directa — Fr. I" → "Adjudicación Directa — Patentes"
+        _ooad_grp6["Tipo Simplificado"] = _ooad_grp6["Tipo Simplificado"].replace(
+            "Adjudicación Directa — Fr. I", "Adjudicación Directa — Patentes"
+        )
+        _colores_ooad6 = {**COLORES_TIPO,
+                          "Adjudicación Directa — Patentes": COLORES_TIPO.get("Adjudicación Directa — Fr. I", "#C05078")}
+
+        # Texto dentro de las barras: mostrar monto solo si el segmento es ≥ 50 M
+        _ooad_grp6["_texto"] = _ooad_grp6["Monto_M"].apply(
+            lambda x: f"${x:,.0f} M" if x >= 50 else ""
+        )
+
+        # Orden: mayor a menor total (ascending en la lista → mayor queda arriba en plotly)
         _ooad_orden6 = (
             _ooad_grp6.groupby("Adscripción")["Monto_M"]
             .sum().sort_values(ascending=True).index.tolist()
         )
 
-        # Tipo de visualización
-        _modo6 = st.radio(
-            "Modo de visualización",
-            ["Apilado (stacked)", "Agrupado (grouped)"],
-            horizontal=True,
-            key="e3_b6_modo"
-        )
-        _barmode6 = "stack" if "Apilado" in _modo6 else "group"
-
         fig_ooad6 = px.bar(
             _ooad_grp6,
             x="Monto_M", y="Adscripción",
             color="Tipo Simplificado",
-            color_discrete_map=COLORES_TIPO,
+            color_discrete_map=_colores_ooad6,
             orientation="h",
-            barmode=_barmode6,
+            barmode="stack",
+            text="_texto",
             category_orders={"Adscripción": _ooad_orden6},
-            title="Monto contratado por OOAD y tipo de procedimiento",
             labels={"Monto_M": "Monto (M MXN)", "Adscripción": ""},
             custom_data=["Adscripción", "Tipo Simplificado", "Importe DRC"]
         )
@@ -3722,15 +3725,18 @@ def pagina_explorador():
             yaxis_title="",
             plot_bgcolor="#ffffff",
             paper_bgcolor="#ffffff",
-            height=max(500, _n_ooad6 * 22),
+            height=max(500, _n_ooad6 * 26),
             legend=dict(
                 title="Tipo de procedimiento",
-                orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0
+                orientation="h", yanchor="top", y=-0.08, xanchor="left", x=0
             ),
-            margin=dict(l=200, r=60, t=60, b=40)
+            margin=dict(l=220, r=80, t=20, b=100)
         )
         fig_ooad6.update_traces(
-            textfont=dict(family="Noto Sans, sans-serif"),
+            textfont=dict(family="Noto Sans, sans-serif", size=11),
+            textposition="inside",
+            insidetextanchor="middle",
+            cliponaxis=False,
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 "%{customdata[1]}<br>"
@@ -3753,6 +3759,12 @@ def pagina_explorador():
             _tbl6["Total (M MXN)"] = _tbl6.drop(columns="Adscripción").sum(axis=1)
             _tbl6 = _tbl6.sort_values("Total (M MXN)", ascending=False).reset_index(drop=True)
             _tbl6.index += 1
+
+            # Renombrar Fr. I → Patentes también en la tabla
+            _tbl6.columns = [
+                c.replace("Adjudicación Directa — Fr. I", "Adjudicación Directa — Patentes")
+                for c in _tbl6.columns
+            ]
 
             # % AD
             _ad_cols6 = [c for c in _tbl6.columns if "Adjudicación" in c]
