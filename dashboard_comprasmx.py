@@ -2921,6 +2921,137 @@ def pagina_riesgo():
             use_container_width=True, height=420
         )
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECCIÓN 11 — MONTOS REDONDOS (RF15)
+    # ─────────────────────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("1️⃣1️⃣ Montos Redondos — Señal de Alerta RF15")
+    st.caption(
+        "Contratos cuyo importe es exactamente divisible por el umbral seleccionado. "
+        "La concentración de montos redondos puede indicar fraccionamiento, estimaciones "
+        "artificiales o precios pactados previamente sin proceso competitivo."
+    )
+
+    _umbral_opts11 = {
+        "$1,000 MXN":       1_000,
+        "$10,000 MXN":     10_000,
+        "$100,000 MXN":   100_000,
+        "$1,000,000 MXN": 1_000_000,
+    }
+    _umbral_lbl11 = st.selectbox(
+        "Umbral de redondeo",
+        options=list(_umbral_opts11.keys()),
+        index=1,
+        key="nr_umbral",
+    )
+    _umbral11 = _umbral_opts11[_umbral_lbl11]
+
+    # Detectar contratos con monto exactamente divisible por el umbral
+    _dff11 = dff[dff["Importe DRC"].notna()].copy()
+    _dff11["_es_redondo"] = (
+        (_dff11["Importe DRC"] % _umbral11 == 0) & (_dff11["Importe DRC"] > 0)
+    )
+    _redondos11 = _dff11[_dff11["_es_redondo"]].copy()
+
+    _n_total11   = len(_dff11)
+    _n_red11     = len(_redondos11)
+    _pct_red11   = _n_red11 / _n_total11 * 100 if _n_total11 > 0 else 0
+    _monto_red11 = _redondos11["Importe DRC"].sum()
+    _ucs_red11   = (
+        _redondos11["Nombre de la UC"].nunique()
+        if "Nombre de la UC" in _redondos11.columns else 0
+    )
+
+    _k11a, _k11b, _k11c, _k11d = st.columns(4)
+    _k11a.metric("Contratos con monto redondo", f"{_n_red11:,}")
+    _k11b.metric("% del total de contratos",    f"{_pct_red11:.1f}%")
+    _k11c.metric("Monto total implicado",        f"${_monto_red11/1e6:.1f} M MXN")
+    _k11d.metric("UCs afectadas",                f"{_ucs_red11:,}")
+
+    if _n_red11 == 0:
+        st.info("No se encontraron contratos con monto redondo para el umbral seleccionado.")
+    else:
+        # Gráfica: % de contratos redondos por UC (top 20 por porcentaje)
+        if "Nombre de la UC" in _dff11.columns:
+            _by_uc11 = (
+                _dff11.groupby("Nombre de la UC")
+                .agg(total=("Importe DRC", "count"), redondos=("_es_redondo", "sum"))
+                .reset_index()
+            )
+            _by_uc11["pct"] = _by_uc11["redondos"] / _by_uc11["total"] * 100
+            _by_uc11 = (
+                _by_uc11[_by_uc11["redondos"] > 0]
+                .sort_values("pct", ascending=True)
+                .tail(20)
+            )
+
+            fig11 = go.Figure()
+            fig11.add_trace(go.Bar(
+                y=_by_uc11["Nombre de la UC"],
+                x=_by_uc11["pct"],
+                orientation="h",
+                marker_color=IMSS_ROJO,
+                text=_by_uc11["pct"].apply(lambda v: f"{v:.1f}%"),
+                textposition="outside",
+                customdata=_by_uc11[["redondos", "total"]].values,
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "Contratos redondos: %{customdata[0]:.0f} / %{customdata[1]:.0f}<br>"
+                    "Porcentaje: %{x:.1f}%<extra></extra>"
+                ),
+            ))
+            fig11.update_layout(
+                height=max(340, len(_by_uc11) * 28 + 60),
+                margin=dict(l=10, r=70, t=20, b=40),
+                xaxis=dict(
+                    title="% de contratos con monto redondo",
+                    ticksuffix="%",
+                    range=[0, min(110, _by_uc11["pct"].max() * 1.18)],
+                ),
+                yaxis=dict(autorange=True),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(family="Noto Sans", size=12),
+            )
+            st.plotly_chart(fig11, use_container_width=True)
+
+        # Tabla detallada de contratos con monto redondo
+        _cols11 = [c for c in [
+            "Nombre de la UC", "Proveedor o contratista", "rfc",
+            "Tipo Simplificado", "Importe DRC", "Descripción del contrato",
+            "Dirección del anuncio",
+        ] if c in _redondos11.columns]
+        _tbl11 = (
+            _redondos11[_cols11]
+            .sort_values("Importe DRC", ascending=False)
+            .reset_index(drop=True)
+        )
+        _tbl11.index += 1
+
+        with st.expander(f"📋 Contratos con monto redondo ({_n_red11:,} registros)"):
+            _tbl11_disp = _tbl11.copy()
+            _tbl11_disp["Importe DRC"] = _tbl11_disp["Importe DRC"].apply(
+                lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
+            )
+            st.dataframe(
+                _tbl11_disp,
+                column_config={
+                    "Dirección del anuncio": st.column_config.LinkColumn(
+                        "🔗 ComprasMX", display_text="Ver contrato"
+                    )
+                },
+                use_container_width=True,
+                height=420,
+            )
+            _csv11 = _tbl11.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Descargar CSV",
+                data=_csv11,
+                file_name="montos_redondos.csv",
+                mime="text/csv",
+                key="dl_montos_redondos",
+            )
+
 
 
 # ───────────────────────────────────────────────────────────────
