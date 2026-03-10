@@ -3052,6 +3052,222 @@ def pagina_riesgo():
                 key="dl_montos_redondos",
             )
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # SECCIÓN 12 — LEY DE BENFORD (RF16)
+    # ─────────────────────────────────────────────────────────────────────────
+    import math as _math
+
+    st.divider()
+    st.subheader("1️⃣2️⃣ Ley de Benford — Señal de Alerta RF16")
+    st.caption(
+        "En datos financieros orgánicos, el primer dígito significativo sigue la distribución "
+        "de Benford: ~30 % de los contratos empiezan con 1, ~18 % con 2, etc. "
+        "Desviaciones significativas respecto a esa distribución pueden indicar montos "
+        "artificiales, fraccionamiento deliberado o precios pactados fuera de competencia."
+    )
+
+    # Distribución teórica de Benford (Newcomb–Benford)
+    _BENFORD = {d: _math.log10(1 + 1 / d) * 100 for d in range(1, 10)}
+
+    # ── Filtro por tipo de procedimiento ──
+    _tipos12 = ["Todos"] + sorted(dff["Tipo Simplificado"].dropna().unique().tolist())
+    _tipo12_sel = st.selectbox(
+        "Filtrar por tipo de procedimiento",
+        options=_tipos12,
+        key="benford_tipo",
+    )
+
+    _dff12 = dff[dff["Importe DRC"].notna() & (dff["Importe DRC"] > 0)].copy()
+    if _tipo12_sel != "Todos":
+        _dff12 = _dff12[_dff12["Tipo Simplificado"] == _tipo12_sel]
+
+    # ── Extraer primer dígito significativo de forma robusta ──
+    def _get_primer_digito(x):
+        try:
+            if x <= 0:
+                return None
+            return int(x / (10 ** _math.floor(_math.log10(x))))
+        except (ValueError, OverflowError):
+            return None
+
+    _dff12["_primer_digito"] = _dff12["Importe DRC"].apply(_get_primer_digito)
+    _dff12 = _dff12[
+        _dff12["_primer_digito"].notna() & _dff12["_primer_digito"].between(1, 9)
+    ].copy()
+
+    _n12 = len(_dff12)
+
+    if _n12 < 30:
+        st.info(
+            f"Muestra insuficiente ({_n12} contratos). "
+            "Se requieren al menos 30 para aplicar la Ley de Benford con validez estadística."
+        )
+    else:
+        _obs12 = _dff12["_primer_digito"].value_counts().sort_index()
+
+        # DataFrame comparativo
+        _bdf = pd.DataFrame({
+            "Dígito":        list(range(1, 10)),
+            "Esperado (%)":  [_BENFORD[d]                    for d in range(1, 10)],
+            "Observado (%)": [_obs12.get(d, 0) / _n12 * 100 for d in range(1, 10)],
+            "Contratos":     [_obs12.get(d, 0)               for d in range(1, 10)],
+        })
+        _bdf["Desviación (pp)"] = _bdf["Observado (%)"] - _bdf["Esperado (%)"]
+
+        # MAD (Nigrini 2012) en puntos porcentuales
+        _mad12 = _bdf["Desviación (pp)"].abs().mean()
+
+        # χ² manual (gl = 8)
+        _chi2_12 = sum(
+            ((_obs12.get(d, 0) - _n12 * _BENFORD[d] / 100) ** 2) / (_n12 * _BENFORD[d] / 100)
+            for d in range(1, 10)
+        )
+
+        # Nivel de conformidad según Nigrini (2012)
+        if _mad12 < 0.6:
+            _nivel12 = "✅ Conformidad estricta — La distribución sigue la Ley de Benford"
+            _color12 = IMSS_VERDE
+        elif _mad12 < 1.2:
+            _nivel12 = "🟡 Conformidad aceptable — Desviación moderada, sin alarma inmediata"
+            _color12 = IMSS_ORO
+        elif _mad12 < 1.5:
+            _nivel12 = "🟠 Conformidad marginal — Revisar patrones por UC y tipo de contratación"
+            _color12 = "#E07B00"
+        else:
+            _nivel12 = "🔴 No conforme — Desviación crítica, alta probabilidad de manipulación de montos"
+            _color12 = IMSS_ROJO
+
+        # ── KPIs ──
+        _k12a, _k12b, _k12c = st.columns(3)
+        _k12a.metric("Contratos analizados", f"{_n12:,}")
+        _k12b.metric("Desviación media (MAD)", f"{_mad12:.2f} pp")
+        _k12c.metric("Estadístico χ²", f"{_chi2_12:.2f}")
+
+        st.markdown(
+            f"""<div style="background:{_color12}22; border-left:4px solid {_color12};
+            padding:10px 16px; border-radius:4px; margin:8px 0;
+            font-family:'Noto Sans',sans-serif; font-size:0.95rem;">
+            <b>{_nivel12}</b>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+        # ── Gráfica: Benford vs Observado ──
+        _fig12 = go.Figure()
+        _fig12.add_trace(go.Bar(
+            name="Esperado (Benford)",
+            x=[str(d) for d in range(1, 10)],
+            y=_bdf["Esperado (%)"],
+            marker_color=IMSS_VERDE,
+            opacity=0.85,
+            hovertemplate="Dígito %{x}<br>Esperado: %{y:.2f}%<extra></extra>",
+        ))
+        _fig12.add_trace(go.Bar(
+            name="Observado",
+            x=[str(d) for d in range(1, 10)],
+            y=_bdf["Observado (%)"],
+            marker_color=IMSS_ROJO,
+            opacity=0.9,
+            text=_bdf["Observado (%)"].apply(lambda v: f"{v:.1f}%"),
+            textposition="outside",
+            customdata=_bdf["Contratos"].values,
+            hovertemplate=(
+                "Dígito %{x}<br>"
+                "Observado: %{y:.2f}%<br>"
+                "Contratos: %{customdata}<extra></extra>"
+            ),
+        ))
+        _fig12.update_layout(
+            barmode="group",
+            height=420,
+            margin=dict(l=10, r=10, t=30, b=55),
+            xaxis=dict(title="Primer dígito significativo del importe"),
+            yaxis=dict(title="Frecuencia (%)", ticksuffix="%"),
+            legend=dict(orientation="h", y=-0.18, x=0.5, xanchor="center"),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(family="Noto Sans", size=12),
+        )
+        st.plotly_chart(_fig12, use_container_width=True)
+
+        # ── Tabla de desviación por dígito ──
+        with st.expander("📊 Tabla de desviación por dígito"):
+            _bdf_disp = _bdf.copy()
+            _bdf_disp["Esperado (%)"]  = _bdf_disp["Esperado (%)"].apply(lambda v: f"{v:.2f}%")
+            _bdf_disp["Observado (%)"] = _bdf_disp["Observado (%)"].apply(lambda v: f"{v:.2f}%")
+            _bdf_disp["Desviación (pp)"] = _bdf_disp["Desviación (pp)"].apply(
+                lambda v: f"+{v:.2f}" if v > 0 else f"{v:.2f}"
+            )
+            st.dataframe(
+                _bdf_disp[["Dígito", "Esperado (%)", "Observado (%)", "Desviación (pp)", "Contratos"]]
+                .set_index("Dígito"),
+                use_container_width=True,
+            )
+
+        # ── Análisis por UC: top 15 con mayor MAD (mínimo 20 contratos) ──
+        if "Nombre de la UC" in _dff12.columns:
+            st.markdown("**Desviación de Benford por Unidad Compradora**")
+            st.caption(
+                "Top 15 UCs con mayor MAD respecto a Benford. "
+                "Solo se incluyen UCs con al menos 20 contratos en el filtro activo."
+            )
+
+            _uc_benford_rows = []
+            for _uc_b, _grp_b in _dff12.groupby("Nombre de la UC"):
+                if len(_grp_b) < 20:
+                    continue
+                _n_uc_b  = len(_grp_b)
+                _obs_uc_b = _grp_b["_primer_digito"].value_counts()
+                _mad_uc_b = sum(
+                    abs(_obs_uc_b.get(d, 0) / _n_uc_b * 100 - _BENFORD[d])
+                    for d in range(1, 10)
+                ) / 9
+                # Dígito con mayor desviación absoluta
+                _desv_uc_b = {d: _obs_uc_b.get(d, 0) / _n_uc_b * 100 - _BENFORD[d] for d in range(1, 10)}
+                _dig_max_b  = max(_desv_uc_b, key=lambda d: abs(_desv_uc_b[d]))
+                _uc_benford_rows.append({
+                    "Nombre de la UC":   _uc_b,
+                    "Contratos":         _n_uc_b,
+                    "MAD (pp)":          round(_mad_uc_b, 3),
+                    "Dígito anómalo":    _dig_max_b,
+                    "Desv. dígito (pp)": round(_desv_uc_b[_dig_max_b], 2),
+                })
+
+            if _uc_benford_rows:
+                _df_uc12 = (
+                    pd.DataFrame(_uc_benford_rows)
+                    .sort_values("MAD (pp)", ascending=True)
+                    .tail(15)
+                )
+                _fig12b = go.Figure(go.Bar(
+                    y=_df_uc12["Nombre de la UC"],
+                    x=_df_uc12["MAD (pp)"],
+                    orientation="h",
+                    marker_color=IMSS_ROJO,
+                    text=_df_uc12["MAD (pp)"].apply(lambda v: f"{v:.2f} pp"),
+                    textposition="outside",
+                    customdata=_df_uc12[["Contratos", "Dígito anómalo", "Desv. dígito (pp)"]].values,
+                    hovertemplate=(
+                        "<b>%{y}</b><br>"
+                        "MAD: %{x:.3f} pp<br>"
+                        "Contratos: %{customdata[0]}<br>"
+                        "Dígito más anómalo: %{customdata[1]}"
+                        " (%{customdata[2]:+.2f} pp)<extra></extra>"
+                    ),
+                ))
+                _fig12b.update_layout(
+                    height=max(320, len(_df_uc12) * 30 + 60),
+                    margin=dict(l=10, r=90, t=20, b=40),
+                    xaxis=dict(title="Desviación media absoluta (pp)"),
+                    yaxis=dict(autorange=True),
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
+                    font=dict(family="Noto Sans", size=12),
+                )
+                st.plotly_chart(_fig12b, use_container_width=True)
+            else:
+                st.info("No hay UCs con al menos 20 contratos en el filtro activo.")
+
 
 
 # ───────────────────────────────────────────────────────────────
