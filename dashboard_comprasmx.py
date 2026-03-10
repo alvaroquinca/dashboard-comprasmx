@@ -3651,6 +3651,131 @@ def pagina_explorador():
                 key="dl_b5_partida"
             )
 
+    st.divider()
+
+    # ── BLOQUE 6: Comparativa de Gasto por OOAD ─────────────────────
+    st.subheader("🗺️ Gasto por OOAD — Composición por Tipo de Procedimiento")
+    st.caption(
+        "Comparativa del monto contratado en los 35 OOAD, desglosado por tipo de procedimiento. "
+        "Refleja los filtros activos en el sidebar (año, tipo de procedimiento, etc.)."
+    )
+
+    _dff_ooad6 = dff_uc[dff_uc["Tipo UC"] == "OOAD"].copy()
+
+    if len(_dff_ooad6) == 0:
+        st.info("ℹ️ No hay datos de OOAD con los filtros actuales.")
+    else:
+        # KPIs
+        _n_ooad6   = _dff_ooad6["Adscripción"].nunique()
+        _monto6    = _dff_ooad6["Importe DRC"].sum()
+        _n_cont6   = len(_dff_ooad6)
+        _pct_ad6   = (
+            _dff_ooad6[_dff_ooad6["Tipo Simplificado"].str.contains("Adjudicación", na=False)]["Importe DRC"].sum()
+            / _monto6 * 100 if _monto6 > 0 else 0
+        )
+
+        _o1, _o2, _o3, _o4 = st.columns(4)
+        _o1.metric("🗺️ OOAD con contratos",   f"{_n_ooad6}")
+        _o2.metric("💰 Monto total OOAD",
+                   f"${_monto6/1e9:,.2f} miles de millones MXN" if _monto6 >= 1e9
+                   else f"${_monto6/1e6:,.1f} M MXN")
+        _o3.metric("📄 Contratos",             f"{_n_cont6:,}")
+        _o4.metric("🔴 % Adjudicación Directa", f"{_pct_ad6:.1f}%")
+
+        # Agrupar por Adscripción × Tipo Simplificado
+        _ooad_grp6 = (
+            _dff_ooad6.groupby(["Adscripción", "Tipo Simplificado"])["Importe DRC"]
+            .sum().reset_index()
+        )
+        _ooad_grp6["Monto_M"] = _ooad_grp6["Importe DRC"] / 1e6
+
+        # Orden de OOAD: de mayor a menor monto total
+        _ooad_orden6 = (
+            _ooad_grp6.groupby("Adscripción")["Monto_M"]
+            .sum().sort_values(ascending=True).index.tolist()
+        )
+
+        # Tipo de visualización
+        _modo6 = st.radio(
+            "Modo de visualización",
+            ["Apilado (stacked)", "Agrupado (grouped)"],
+            horizontal=True,
+            key="e3_b6_modo"
+        )
+        _barmode6 = "stack" if "Apilado" in _modo6 else "group"
+
+        fig_ooad6 = px.bar(
+            _ooad_grp6,
+            x="Monto_M", y="Adscripción",
+            color="Tipo Simplificado",
+            color_discrete_map=COLORES_TIPO,
+            orientation="h",
+            barmode=_barmode6,
+            category_orders={"Adscripción": _ooad_orden6},
+            title="Monto contratado por OOAD y tipo de procedimiento",
+            labels={"Monto_M": "Monto (M MXN)", "Adscripción": ""},
+            custom_data=["Adscripción", "Tipo Simplificado", "Importe DRC"]
+        )
+        fig_ooad6.update_layout(
+            font=plotly_font(),
+            xaxis_title="Monto (millones MXN)",
+            yaxis_title="",
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
+            height=max(500, _n_ooad6 * 22),
+            legend=dict(
+                title="Tipo de procedimiento",
+                orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0
+            ),
+            margin=dict(l=200, r=60, t=60, b=40)
+        )
+        fig_ooad6.update_traces(
+            textfont=dict(family="Noto Sans, sans-serif"),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "%{customdata[1]}<br>"
+                "Monto: $%{customdata[2]:,.0f}<extra></extra>"
+            )
+        )
+        st.plotly_chart(fig_ooad6, use_container_width=True)
+
+        # Tabla resumen con % por tipo
+        with st.expander("📋 Ver tabla por OOAD"):
+            _tbl6 = (
+                _ooad_grp6.pivot_table(
+                    index="Adscripción",
+                    columns="Tipo Simplificado",
+                    values="Monto_M",
+                    aggfunc="sum",
+                    fill_value=0
+                ).reset_index()
+            )
+            _tbl6["Total (M MXN)"] = _tbl6.drop(columns="Adscripción").sum(axis=1)
+            _tbl6 = _tbl6.sort_values("Total (M MXN)", ascending=False).reset_index(drop=True)
+            _tbl6.index += 1
+
+            # % AD
+            _ad_cols6 = [c for c in _tbl6.columns if "Adjudicación" in c]
+            if _ad_cols6:
+                _tbl6["% AD"] = (
+                    _tbl6[_ad_cols6].sum(axis=1) / _tbl6["Total (M MXN)"] * 100
+                ).round(1).astype(str) + "%"
+
+            # Formatear montos
+            for _c in _tbl6.columns:
+                if _c not in ("Adscripción", "% AD"):
+                    _tbl6[_c] = _tbl6[_c].apply(lambda x: f"${x:,.1f} M")
+
+            st.dataframe(_tbl6, use_container_width=True)
+
+            st.download_button(
+                "📥 Descargar tabla OOAD (CSV)",
+                data=_tbl6.to_csv(index=False).encode("utf-8-sig"),
+                file_name="gasto_por_ooad.csv",
+                mime="text/csv",
+                key="dl_b6_ooad"
+            )
+
 
 # ───────────────────────────────────────────────────────────────
 # PÁGINA 4: PAGINA_HISTORICA
