@@ -3715,13 +3715,13 @@ def pagina_explorador():
             orientation="h",
             barmode="stack",
             text="_texto",
-            category_orders={"Adscripción": _ooad_orden6},
             labels={"Monto_M": "Monto (M MXN)", "Adscripción": ""},
             custom_data=["Adscripción", "Tipo Simplificado", "Importe DRC"]
         )
         fig_ooad6.update_layout(
             font=plotly_font(),
             xaxis_title="Monto (millones MXN)",
+            yaxis=dict(categoryorder="total ascending"),
             yaxis_title="",
             plot_bgcolor="#ffffff",
             paper_bgcolor="#ffffff",
