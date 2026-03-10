@@ -154,6 +154,42 @@ def cargar_datos(filename):
     return df
 
 @st.cache_data
+def cargar_desde_upload(content_bytes: bytes, nombre: str):
+    """Carga un CSV de ComprasMX subido por el usuario (encoding auto-detectado)."""
+    import io
+    df = None
+    for enc in ("utf-8", "latin1", "utf-8-sig"):
+        try:
+            df = pd.read_csv(io.BytesIO(content_bytes), encoding=enc, low_memory=False)
+            break
+        except Exception:
+            continue
+    if df is None:
+        return pd.DataFrame()
+    df["Importe DRC"] = pd.to_numeric(df["Importe DRC"], errors="coerce")
+    if "Partida específica" in df.columns:
+        df["Partida específica"] = df["Partida específica"].astype(str).str.strip().str.zfill(5)
+    def _clasificar(tipo):
+        if pd.isna(tipo): return "Sin clasificar"
+        t = str(tipo).upper()
+        if "LICITACIÓN PÚBLICA" in t: return "Licitación Pública"
+        elif "INVITACIÓN" in t:       return "Invitación a 3 personas"
+        elif "ADJUDICACIÓN" in t:     return "Adjudicación Directa"
+        elif "ENTRE ENTES" in t:      return "Entre Entes Públicos"
+        return "Otro"
+    df["Tipo Simplificado"] = df["Tipo Procedimiento"].apply(_clasificar)
+    _col_exc = "Artículo de excepción"
+    if _col_exc in df.columns:
+        _exc_upper = df[_col_exc].astype(str).str.upper().str.strip()
+        _mask_fri = (
+            (df["Tipo Simplificado"] == "Adjudicación Directa") &
+            _exc_upper.isin({"ART. 54 FR. I", "ART. 41 FR. I"})
+        )
+        df.loc[_mask_fri, "Tipo Simplificado"] = "Adjudicación Directa — Fr. I"
+    df["Año"] = nombre
+    return df
+
+@st.cache_data
 def cargar_cucop():
     df_c = pd.read_excel("cucop_20260301.xlsx", sheet_name="cucop", dtype=str)
     df_c.columns = df_c.columns.str.strip()
@@ -389,6 +425,22 @@ if not anios_sel:
     anios_sel = ["2026"]
     st.sidebar.warning("Selecciona al menos un año.")
 
+# ── Carga de CSV externo (APF completa u otra institución) ──
+st.sidebar.divider()
+with st.sidebar.expander("📂 Cargar CSV de ComprasMX"):
+    st.caption(
+        "Sube el CSV completo de ComprasMX (cualquier año) para analizar "
+        "cualquier institución de la APF. El filtro **Institución** del sidebar "
+        "se actualizará con todas las dependencias disponibles en el archivo."
+    )
+    _archivo_subido = st.file_uploader(
+        "Seleccionar archivo CSV",
+        type=["csv"],
+        key="upload_apf_csv",
+        label_visibility="collapsed"
+    )
+st.sidebar.divider()
+
 # Cargar y concatenar los DataFrames de los años seleccionados
 _dfs_anio = []
 for _a in anios_sel:
@@ -400,6 +452,21 @@ for _a in anios_sel:
             _dfs_anio.append(_df_a)
         except Exception:
             st.sidebar.warning(f"No se pudo cargar el archivo de {_a}.")
+
+# Agregar CSV externo si se subió uno
+if _archivo_subido is not None:
+    _bytes = _archivo_subido.read()
+    _nombre_subido = Path(_archivo_subido.name).stem
+    _df_subido = cargar_desde_upload(_bytes, _nombre_subido)
+    if len(_df_subido) > 0:
+        _dfs_anio.append(_df_subido)
+        st.sidebar.success(
+            f"📂 **{_archivo_subido.name}** cargado — "
+            f"{len(_df_subido):,} contratos de {_df_subido['Institución'].nunique()} institución(es)."
+        )
+    else:
+        st.sidebar.error("⚠️ No se pudo leer el archivo. Verifica que sea un CSV de ComprasMX.")
+
 df = pd.concat(_dfs_anio, ignore_index=True) if _dfs_anio else cargar_datos(_ARCHIVOS_ANIO["2026"])
 
 # Aplicar nombres editados de UC desde Base_UC_2025_V2.xlsx a todo el dashboard
@@ -415,7 +482,8 @@ if len(df_dir_uc) > 0 and "Clave_UC" in df_dir_uc.columns:
 
 # Caption dinámico
 _anios_label = ", ".join(anios_sel)
-st.caption(f"Fuente: ComprasMX {_anios_label} | División de Monitoreo de la Integridad Institucional – IMSS")
+_extra_label  = f" + {_archivo_subido.name}" if _archivo_subido is not None else ""
+st.caption(f"Fuente: ComprasMX {_anios_label}{_extra_label} | División de Monitoreo de la Integridad Institucional – IMSS")
 
 instituciones = ["Todas"] + sorted(df["Institución"].dropna().unique().tolist())
 default_imss = instituciones.index("INSTITUTO MEXICANO DEL SEGURO SOCIAL") if "INSTITUTO MEXICANO DEL SEGURO SOCIAL" in instituciones else 0
