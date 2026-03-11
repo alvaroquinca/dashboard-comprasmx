@@ -1104,352 +1104,7 @@ def pagina_descripcion():
         )
         st.plotly_chart(fig_tl, use_container_width=True)
 
-    # ════════════════════════════════════════════════════════════
-    # TOP 20 CONTRATOS DE MAYOR RIESGO COMPUESTO
-    # ════════════════════════════════════════════════════════════
-    st.subheader("🚨 Top 20 contratos de mayor riesgo compuesto")
-    with st.expander("ℹ️ Metodología — Score de riesgo compuesto", expanded=False):
-        st.markdown(
-            """
-            Cada contrato recibe un **score de riesgo base** calculado como la suma de los
-            indicadores de alerta que activan, y luego se **pondera por el monto** del contrato
-            (contratos de mayor valor amplifican el riesgo):
 
-            | Indicador | Puntos | Fundamento |
-            |---|---|---|
-            | 🔴 SABG — Inhabilitación vigente | 100 | Contratación legalmente prohibida. Fecha de fallo (o firma en AD) ≥ inicio inhabilitación (Art. 46 LAASSP) |
-            | 🟠 SABG — Inhabilitación suspendida | 60 | Resolución judicial pendiente |
-            | 🟡 SABG — Historial de inhabilitación | 30 | Antecedente de sanción |
-            | 🔴 EFOS definitivo (Art. 69-B CFF) | 80 | Operaciones simuladas confirmadas por el SAT |
-            | 🟡 EFOS presunto | 40 | Investigación SAT en curso |
-            | 🚦 Zona umbral legal (90–100 % del tope) | 45 | Monto justo por debajo del límite que exigiría licitación — posible fraccionamiento deliberado |
-            | 🟡 Empresa < 1 año de constitución | 30 | Posible empresa creada *ad hoc* |
-            | 🔴 Adjudicación directa (sin concurso) | 20 | Proceso sin competencia abierta |
-            | 🟡 Invitación a 3 personas | 5 | Competencia restringida |
-
-            > **SABG — fecha de referencia:** Para licitaciones y contratos con invitación a tres personas se usa
-            la *fecha de fallo*; para adjudicaciones directas (que no generan fallo formal) se usa la
-            *fecha de firma del contrato*. Fundamento: Art. 46 LAASSP.
-
-            **Ponderación por monto:**
-            `Score_final = Score_base × (1 + 0.5 × percentil_monto)` — contratos en el percentil 99
-            de monto reciben hasta un 50 % más de peso que los de menor cuantía.
-
-            El score se normaliza a **0 – 100** dentro del conjunto filtrado para facilitar la
-            comparación. Un contrato puede acumular alertas de múltiples indicadores.
-            """
-        )
-
-    with st.spinner("Calculando scores de riesgo…"):
-        import re as _re_risk
-        from datetime import date as _date_risk
-
-        # ── 1. Cargar indicadores externos ─────────────────────
-        # SABG: dict RFC → (inicio_inhabilitacion_dt, nivel_riesgo)
-        # Se usa el criterio Art. 46 LAASSP: la fecha de fallo es la referencia
-        _sabg_dict = {}
-        try:
-            _df_sabg_r = cargar_sancionados()
-            for _, _sr in _df_sabg_r.iterrows():
-                _ru2 = str(_sr["RFC"]).strip().upper()
-                _ini_d = pd.to_datetime(_sr.get("Inicio inhabilitación"), errors="coerce")
-                if _ru2 and _ru2 not in _sabg_dict:
-                    _sabg_dict[_ru2] = (_ini_d, str(_sr.get("Nivel de Riesgo", "")))
-        except Exception:
-            pass
-
-        try:
-            _df_efos_r = cargar_efos()
-            _rfcs_ed = set(_df_efos_r[
-                _df_efos_r["Situación del contribuyente"] == "Definitivo"]["RFC"])
-            _rfcs_ep = set(_df_efos_r[
-                _df_efos_r["Situación del contribuyente"] == "Presunto"]["RFC"])
-        except Exception:
-            _rfcs_ed = _rfcs_ep = set()
-
-        # ── 2. Flags vectorizados ───────────────────────────────
-        _rfc_n = dff["rfc"].astype(str).str.strip().str.upper()
-
-        # Fecha de referencia para Art. 46 LAASSP:
-        #   Licitaciones / Inv. 3p → "Fecha de fallo" (momento formal de adjudicación)
-        #   Adjudicaciones directas → no hay fallo; se usa "Fecha de firma del contrato"
-        #   Si ninguna disponible   → NaT → flag "verificar manualmente"
-        _fecha_fallo_r = pd.to_datetime(
-            dff["Fecha de fallo"] if "Fecha de fallo" in dff.columns
-            else pd.Series(pd.NaT, index=dff.index),
-            format="%d/%m/%Y", errors="coerce",
-        )
-        _fecha_firma_r = pd.to_datetime(
-            dff["Fecha de firma del contrato"] if "Fecha de firma del contrato" in dff.columns
-            else pd.Series(pd.NaT, index=dff.index),
-            format="%d/%m/%Y", errors="coerce",
-        )
-        # Fecha efectiva: fallo si existe, si no la firma del contrato
-        _fecha_ref_r = _fecha_fallo_r.combine_first(_fecha_firma_r)
-
-        # Flags SABG con comparación de fechas (Art. 46 LAASSP):
-        #   fecha_ref >= inicio_inhabilitacion → violación real (riesgo aplica)
-        #   fecha_ref <  inicio_inhabilitacion → fecha previa, sin violación LAASSP
-        #   fecha_ref = NaT                   → sin fecha de referencia, verificar
-        _f_sc_l, _f_sa_l, _f_sm_l, _f_sb_prior_l, _f_sb_unk_l = [], [], [], [], []
-        for _ix2 in dff.index:
-            _ru2 = _rfc_n.loc[_ix2]
-            if _ru2 not in _sabg_dict:
-                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
-                _f_sb_prior_l.append(False); _f_sb_unk_l.append(False)
-                continue
-            _ini_dt2, _niv2 = _sabg_dict[_ru2]
-            _fref2 = _fecha_ref_r.loc[_ix2]
-            if pd.isna(_fref2):
-                # Sin ninguna fecha disponible → no se puede determinar
-                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
-                _f_sb_prior_l.append(False); _f_sb_unk_l.append(True)
-            elif not pd.isna(_ini_dt2) and _fref2 < _ini_dt2:
-                # Fecha anterior a la inhabilitación → sin violación LAASSP
-                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
-                _f_sb_prior_l.append(True); _f_sb_unk_l.append(False)
-            else:
-                # Fecha dentro del período de inhabilitación → violación real
-                _niv2_l = _niv2.lower()
-                _f_sc_l.append("crítico" in _niv2_l)
-                _f_sa_l.append("alto" in _niv2_l and "crítico" not in _niv2_l)
-                _f_sm_l.append("medio" in _niv2_l)
-                _f_sb_prior_l.append(False); _f_sb_unk_l.append(False)
-
-        _f_sc       = pd.Series(_f_sc_l,       index=dff.index)
-        _f_sa       = pd.Series(_f_sa_l,       index=dff.index)
-        _f_sm       = pd.Series(_f_sm_l,       index=dff.index)
-        _f_sb_prior = pd.Series(_f_sb_prior_l, index=dff.index)
-        _f_sb_unk   = pd.Series(_f_sb_unk_l,   index=dff.index)
-
-        _f_ed = _rfc_n.isin(_rfcs_ed)
-        _f_ep = _rfc_n.isin(_rfcs_ep)
-
-        # Zona umbral legal: 90 % ≤ importe/umbral < 100 %
-        # (misma lógica que el indicador 0️⃣ de la sección de Colusión)
-        _f_umb = pd.Series(False, index=dff.index)
-        try:
-            _umbrales_pef_r = cargar_umbrales_pef()
-            if _umbrales_pef_r:
-                _TIPOS_AD_R   = {"Adjudicación Directa", "Adjudicación Directa — Fr. I"}
-                _TIPOS_I3P_R  = {"Invitación a 3 personas"}
-                _TIPOS_SERV_R = {"SERVICIOS", "SERVICIOS RELACIONADOS CON LA OBRA", "ARRENDAMIENTOS"}
-                _mask_proc_r  = dff["Tipo Simplificado"].isin(_TIPOS_AD_R | _TIPOS_I3P_R)
-                _dff_u_r = dff[_mask_proc_r].copy()
-                _dff_u_r["_fecha_ur"] = pd.to_datetime(
-                    _dff_u_r["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
-                )
-                _dff_u_r["_año_ur"]  = _dff_u_r["_fecha_ur"].dt.year
-                _dff_u_r["_ley_ur"]  = (
-                    _dff_u_r["Ley"].astype(str).str.strip().str.upper()
-                    if "Ley" in _dff_u_r.columns else "LAASSP"
-                )
-                _dff_u_r["_cont_ur"] = (
-                    _dff_u_r["Tipo de contratación"].astype(str).str.strip().str.upper()
-                    if "Tipo de contratación" in _dff_u_r.columns else "ADQUISICIONES"
-                )
-                _dff_u_r["_proc_ur"]   = _dff_u_r["Tipo Simplificado"]
-                _dff_u_r["_umbral_ur"] = float("nan")
-                for _año_r2, _th_r2 in _umbrales_pef_r.items():
-                    _ma_r2 = _dff_u_r["_año_ur"] == _año_r2
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LAASSP") & _dff_u_r["_proc_ur"].isin(_TIPOS_AD_R),
-                        "_umbral_ur"] = _th_r2["ad_laassp"]
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LAASSP") & _dff_u_r["_proc_ur"].isin(_TIPOS_I3P_R),
-                        "_umbral_ur"] = _th_r2["i3p_laassp"]
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LOPSRM") & _dff_u_r["_proc_ur"].isin(_TIPOS_AD_R)
-                        & _dff_u_r["_cont_ur"].eq("OBRA PÚBLICA"),
-                        "_umbral_ur"] = _th_r2["ad_obra_lopsrm"]
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LOPSRM") & _dff_u_r["_proc_ur"].isin(_TIPOS_AD_R)
-                        & _dff_u_r["_cont_ur"].isin(_TIPOS_SERV_R),
-                        "_umbral_ur"] = _th_r2["ad_serv_lopsrm"]
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LOPSRM") & _dff_u_r["_proc_ur"].isin(_TIPOS_I3P_R)
-                        & _dff_u_r["_cont_ur"].eq("OBRA PÚBLICA"),
-                        "_umbral_ur"] = _th_r2["i3p_obra_lopsrm"]
-                    _dff_u_r.loc[
-                        _ma_r2 & _dff_u_r["_ley_ur"].eq("LOPSRM") & _dff_u_r["_proc_ur"].isin(_TIPOS_I3P_R)
-                        & _dff_u_r["_cont_ur"].isin(_TIPOS_SERV_R),
-                        "_umbral_ur"] = _th_r2["i3p_serv_lopsrm"]
-                _dff_u_r["_pct_ur"] = _dff_u_r["Importe DRC"] / _dff_u_r["_umbral_ur"] * 100
-                _ixs_umb = _dff_u_r[
-                    _dff_u_r["_umbral_ur"].notna()
-                    & (_dff_u_r["_pct_ur"] >= 90)
-                    & (_dff_u_r["_pct_ur"] < 100)
-                ].index
-                _f_umb.loc[_ixs_umb] = True
-        except Exception:
-            pass
-
-        _tipo_r = dff["Tipo Simplificado"]
-        _f_ad   = _tipo_r == "Adjudicación Directa"
-        _f_fri  = _tipo_r == "Adjudicación Directa — Fr. I"
-        _f_i3p  = _tipo_r == "Invitación a 3 personas"
-
-        # Reciente creación: parse RFC date vectorizado
-        _RFC_PAT = _re_risk.compile(r'^[A-ZÑ&]{3}(\d{2})(\d{2})(\d{2})[A-Z0-9]{3}$')
-
-        def _parse_rfc_d(rfc):
-            m = _RFC_PAT.match(str(rfc).strip().upper())
-            if not m:
-                return None
-            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            if not (1 <= mm <= 12 and 1 <= dd <= 31):
-                return None
-            yr = 2000 + yy if yy <= 30 else 1900 + yy
-            try:
-                return _date_risk(yr, mm, dd)
-            except ValueError:
-                return None
-
-        _fecha_rfc_r = dff["rfc"].map(_parse_rfc_d)
-        _fecha_ini_r = pd.to_datetime(
-            dff["Fecha de inicio del contrato"], format="%d/%m/%Y", errors="coerce"
-        ).dt.date
-
-        _edad_r = pd.Series([
-            (fi - fr).days
-            if (fi is not None and fr is not None
-                and not (isinstance(fi, float) and pd.isna(fi)))
-            else None
-            for fi, fr in zip(_fecha_ini_r, _fecha_rfc_r)
-        ], index=dff.index)
-
-        _f_rc = _edad_r.apply(lambda x: bool(x is not None and 0 <= x < 365))
-
-        # ── 3. Score base ────────────────────────────────────────
-        _score_base = (
-            _f_sc.astype(int)       * 100 +   # SABG riesgo crítico vigente
-            _f_sa.astype(int)       * 60  +   # SABG riesgo alto (suspendido)
-            _f_sm.astype(int)       * 30  +   # SABG riesgo medio (historial)
-            _f_ed.astype(int)       * 80  +   # EFOS definitivo
-            _f_ep.astype(int)       * 40  +   # EFOS presunto
-            _f_umb.astype(int)      * 45  +   # Zona umbral legal (90–100 % del tope)
-            _f_rc.astype(int)       * 30  +   # Reciente creación
-            _f_ad.astype(int)       * 20  +   # Adjudicación directa
-            _f_fri.astype(int)      * 5   +   # AD Fracción I
-            _f_i3p.astype(int)      * 5       # Invitación a 3 personas
-        )
-
-        # ── 4. Ponderación por monto (factor 1.0 – 1.5) ─────────
-        _monto_pct  = dff["Importe DRC"].rank(pct=True, na_option="bottom")
-        _score_w    = (_score_base * (1.0 + 0.5 * _monto_pct)).round(2)
-        _score_norm = _score_w.clip(upper=100).round(1)  # tope en 100 pts
-
-        # ── 5. Etiquetas de alertas detectadas ──────────────────
-        _alerta_parts = []
-        for _ix in dff.index:
-            _parts = []
-            _ru = _rfc_n.loc[_ix]
-            if _f_sc.loc[_ix]:          _parts.append("🔴 SABG inhabilitado")
-            elif _f_sa.loc[_ix]:        _parts.append("🟠 SABG suspendido")
-            elif _f_sm.loc[_ix]:        _parts.append("🟡 SABG historial")
-            elif _f_sb_prior.loc[_ix]:  _parts.append("🟤 Fallo previo a inhabilitación")
-            if _ru in _rfcs_ed:   _parts.append("🔴 EFOS definitivo")
-            elif _ru in _rfcs_ep: _parts.append("🟡 EFOS presunto")
-            if _f_umb.loc[_ix]:   _parts.append("🚦 Zona umbral legal")
-            if _f_rc.loc[_ix]:    _parts.append("🟡 Reciente creación")
-            _tp = _tipo_r.loc[_ix]
-            if _tp == "Adjudicación Directa":         _parts.append("🔴 Adj. directa")
-            elif _tp == "Adjudicación Directa — Fr. I": _parts.append("⚪ AD — Patentes")
-            elif _tp == "Invitación a 3 personas":      _parts.append("🟡 Inv. 3 personas")
-            _alerta_parts.append(" · ".join(_parts) if _parts else "—")
-
-        _alertas_s = pd.Series(_alerta_parts, index=dff.index)
-
-        # ── 6. Construir tabla top 20 ────────────────────────────
-        _top20 = (
-            dff.assign(
-                Score       = _score_norm,
-                Score_raw   = _score_w,
-                Alertas     = _alertas_s,
-            )
-            .query("Score_raw > 0")           # solo contratos con al menos 1 alerta
-            .sort_values("Score_raw", ascending=False)
-            .head(20)
-            [["Score", "Alertas",
-              "Proveedor o contratista", "Importe DRC",
-              "Tipo Simplificado", "Nombre de la UC",
-              "Descripción del contrato", "Dirección del anuncio"]]
-            .rename(columns={
-                "Proveedor o contratista": "Proveedor",
-                "Importe DRC":            "Importe",
-                "Tipo Simplificado":      "Tipo",
-                "Nombre de la UC":        "UC",
-                "Descripción del contrato": "Descripción",
-            })
-            .reset_index(drop=True)
-        )
-        _top20.index += 1
-
-    # ── KPIs del score ───────────────────────────────────────────
-    _n_con_riesgo = int((_score_w > 0).sum())
-    _n_criticos   = int((_score_norm >= 60).sum())
-    _monto_riesgo = dff.loc[_score_w > 0, "Importe DRC"].sum()
-
-    _kr1, _kr2, _kr3 = st.columns(3)
-    _kr1.metric(
-        "⚠️ Contratos con algún indicador de riesgo",
-        f"{_n_con_riesgo:,}",
-        delta=f"{_n_con_riesgo/len(dff)*100:.1f}% del total" if len(dff) > 0 else "",
-        delta_color="off",
-    )
-    _kr2.metric(
-        "🔴 Contratos con score ≥ 60 (riesgo alto)",
-        f"{_n_criticos:,}",
-    )
-    _kr3.metric(
-        "💰 Monto total en contratos con riesgo",
-        f"${_monto_riesgo/1e9:,.2f} miles de millones MXN"
-        if _monto_riesgo >= 1e9 else f"${_monto_riesgo/1e6:,.1f} M MXN",
-    )
-
-    if len(_top20) == 0:
-        st.success("✅ No se detectaron contratos con indicadores de riesgo activos.")
-    else:
-        _top20["Importe_fmt"] = _top20["Importe"].apply(
-            lambda x: (f"${x/1e9:,.2f} mil M" if pd.notna(x) and x >= 1e9
-                       else f"${x/1e6:,.1f} M") if pd.notna(x) else "N/D"
-        )
-        # Columna numérica para ProgressColumn (mantener float)
-        _top20["Score"] = _top20["Score"].astype(float)
-        # Quitar la columna Importe raw (solo mostrar la formateada)
-        _top20_show = _top20.drop(columns=["Importe"]).rename(
-            columns={"Importe_fmt": "Importe"}
-        )
-        # Reordenar columnas para mejor lectura
-        _top20_show = _top20_show[[
-            "Score", "Alertas", "Proveedor", "Importe",
-            "Tipo", "UC", "Descripción", "Dirección del anuncio"
-        ]]
-
-        st.dataframe(
-            _top20_show,
-            column_config={
-                "Score": st.column_config.ProgressColumn(
-                    "🎯 Score",
-                    help="Score de riesgo ponderado por monto. Combina indicadores SABG, EFOS, "
-                         "reciente creación y tipo de procedimiento.",
-                    min_value=0,
-                    max_value=100,
-                    format="%.1f",
-                ),
-                "Alertas":   st.column_config.TextColumn("🚨 Alertas detectadas", width="large"),
-                "Proveedor": st.column_config.TextColumn("Proveedor", width="medium"),
-                "Importe":   st.column_config.TextColumn("💰 Importe", width="small"),
-                "Tipo":      st.column_config.TextColumn("Tipo", width="medium"),
-                "UC":        st.column_config.TextColumn("Unidad Compradora", width="medium"),
-                "Descripción": st.column_config.TextColumn("Descripción", width="large"),
-                "Dirección del anuncio": st.column_config.LinkColumn(
-                    "🔗 ComprasMX", display_text="Ver contrato"
-                ),
-            },
-            use_container_width=True,
-            height=min(700, 60 + len(_top20_show) * 55),
-        )
 
     st.divider()
 
@@ -7292,19 +6947,24 @@ def pagina_expediente():
                     _df_san6_sc = cargar_sancionados()
                     _san6_sc = _df_san6_sc[_df_san6_sc["RFC"].str.strip() == _rfc_c6]
                     if len(_san6_sc) > 0:
-                        _niv6_sc = _san6_sc.iloc[0]["Nivel de Riesgo"]
-                        _ini6_sc = pd.to_datetime(_san6_sc.iloc[0]["Inicio inhabilitación"], errors="coerce")
-                        _ff6_sc  = pd.to_datetime(_c.get("Fecha de fallo"), format="%d/%m/%Y", errors="coerce")
-                        _fm6_sc  = pd.to_datetime(_c.get("Fecha de firma del contrato"), format="%d/%m/%Y", errors="coerce")
-                        _fr6_sc  = _ff6_sc if not pd.isna(_ff6_sc) else _fm6_sc
-                        _niv6_sc_l = _niv6_sc.lower()
-                        if "crítico" in _niv6_sc_l:
-                            if not pd.isna(_fr6_sc) and not pd.isna(_ini6_sc) and _fr6_sc >= _ini6_sc:
-                                _pts_c6 += 100
-                        elif "alto" in _niv6_sc_l:
-                            _pts_c6 += 60
-                        elif "medio" in _niv6_sc_l:
-                            _pts_c6 += 30
+                        _ff6_sc = pd.to_datetime(_c.get("Fecha de fallo"), format="%d/%m/%Y", errors="coerce")
+                        _fm6_sc = pd.to_datetime(_c.get("Fecha de firma del contrato"), format="%d/%m/%Y", errors="coerce")
+                        _fr6_sc = _ff6_sc if not pd.isna(_ff6_sc) else _fm6_sc
+                        # Evaluar TODOS los registros del RFC (no solo el primero)
+                        _sc6 = _sa6 = _sm6 = False
+                        for _, _row6 in _san6_sc.iterrows():
+                            _niv6_l = str(_row6.get("Nivel de Riesgo", "")).lower()
+                            _ini6   = pd.to_datetime(_row6.get("Inicio inhabilitación"), errors="coerce")
+                            if "crítico" in _niv6_l:
+                                if not pd.isna(_fr6_sc) and not pd.isna(_ini6) and _fr6_sc >= _ini6:
+                                    _sc6 = True
+                            elif "alto" in _niv6_l:
+                                _sa6 = True
+                            elif "medio" in _niv6_l:
+                                _sm6 = True
+                        if _sc6:   _pts_c6 += 100
+                        elif _sa6: _pts_c6 += 60
+                        elif _sm6: _pts_c6 += 30
                 except Exception:
                     pass
 
@@ -9082,6 +8742,398 @@ def pagina_colusion():
 
     st.divider()
 
+# ───────────────────────────────────────────────────────────────
+# PÁGINA: RANKING DE RIESGO COMPUESTO
+# ───────────────────────────────────────────────────────────────
+def pagina_ranking_riesgo():
+    import re as _re_rk
+    from datetime import date as _date_rk
+
+    st.header("🏆 Ranking de Riesgo Compuesto")
+    st.caption(
+        "Contratos ordenados por su acumulación de indicadores de riesgo. "
+        "El score combina inhabilitaciones SABG (Art. 46 LAASSP), EFOS Art. 69-B CFF, "
+        "empresas de reciente creación, zona umbral legal y tipo de procedimiento, "
+        "ponderado por el monto del contrato."
+    )
+
+    _c_rk1, _c_rk2 = st.columns([3, 1])
+    _ucs_rk = ["Todas"] + sorted(dff["Nombre de la UC"].dropna().unique().tolist())
+    _uc_rk  = _c_rk1.selectbox(
+        "🏢 Filtrar por Unidad Compradora (opcional):",
+        _ucs_rk, key="rk_uc_sel",
+    )
+    _top_n_rk = _c_rk2.selectbox(
+        "Mostrar top:", [20, 50, 100, 200], index=0, key="rk_top_n",
+        help="Número de contratos a mostrar en el ranking",
+    )
+    _dff_rk = (
+        dff[dff["Nombre de la UC"] == _uc_rk].copy()
+        if _uc_rk != "Todas" else dff.copy()
+    )
+    if len(_dff_rk) == 0:
+        st.info("ℹ️ Sin contratos para la selección actual.")
+        return
+
+    with st.expander("ℹ️ Metodología — Score de riesgo compuesto", expanded=False):
+        st.markdown(
+            """
+            Cada contrato recibe un **score de riesgo base** calculado como la suma de los
+            indicadores de alerta que activan, y luego se **pondera por el monto** del contrato
+            (contratos de mayor valor amplifican el riesgo):
+
+            | Indicador | Puntos | Fundamento |
+            |---|---|---|
+            | 🔴 SABG — Inhabilitación vigente | 100 | Contratación legalmente prohibida. Fecha de fallo (o firma en AD) ≥ inicio inhabilitación (Art. 46 LAASSP) |
+            | 🟠 SABG — Inhabilitación suspendida | 60 | Resolución judicial pendiente |
+            | 🟡 SABG — Historial de inhabilitación | 30 | Antecedente de sanción |
+            | 🔴 EFOS definitivo (Art. 69-B CFF) | 80 | Operaciones simuladas confirmadas por el SAT |
+            | 🟡 EFOS presunto | 40 | Investigación SAT en curso |
+            | 🚦 Zona umbral legal (90–100 % del tope) | 45 | Monto justo por debajo del límite que exigiría licitación |
+            | 🟡 Empresa < 1 año de constitución | 30 | Posible empresa creada *ad hoc* |
+            | 🔴 Adjudicación directa (sin concurso) | 20 | Proceso sin competencia abierta |
+            | 🟡 Invitación a 3 personas | 5 | Competencia restringida |
+
+            > **SABG — fecha de referencia:** Para licitaciones e invitaciones a tres personas se usa
+            la *fecha de fallo*; para adjudicaciones directas (que no generan fallo formal) se usa la
+            *fecha de firma del contrato*. Fundamento: Art. 46 LAASSP.
+
+            **Ponderación por monto:**
+            `Score_final = Score_base × (1 + 0.5 × percentil_monto)` — contratos en el percentil 99
+            de monto reciben hasta un 50 % más de peso.
+            El score se normaliza a **0–100**. Un contrato puede acumular alertas de múltiples indicadores.
+            """
+        )
+
+    # ════════════════════════════════════════════════════════════
+    # CÁLCULO DE SCORES
+    # ════════════════════════════════════════════════════════════
+    with st.spinner("Calculando scores de riesgo…"):
+
+        # ── 1. Indicadores externos ────────────────────────────
+        # SABG: dict RFC → LISTA de (inicio_dt, nivel_str)
+        # BUG FIX: almacenar TODOS los registros por RFC, no solo el primero.
+        # Una empresa puede tener múltiples inhabilitaciones en distintos períodos.
+        _sabg_records_rk = {}
+        try:
+            _df_sabg_rk = cargar_sancionados()
+            for _, _sr in _df_sabg_rk.iterrows():
+                _ru2 = str(_sr["RFC"]).strip().upper()
+                _ini_d = pd.to_datetime(_sr.get("Inicio inhabilitación"), errors="coerce")
+                _niv2  = str(_sr.get("Nivel de Riesgo", ""))
+                if _ru2:
+                    _sabg_records_rk.setdefault(_ru2, []).append((_ini_d, _niv2))
+        except Exception:
+            pass
+
+        try:
+            _df_efos_rk = cargar_efos()
+            _rfcs_ed_rk = set(_df_efos_rk[
+                _df_efos_rk["Situación del contribuyente"] == "Definitivo"]["RFC"])
+            _rfcs_ep_rk = set(_df_efos_rk[
+                _df_efos_rk["Situación del contribuyente"] == "Presunto"]["RFC"])
+        except Exception:
+            _rfcs_ed_rk = _rfcs_ep_rk = set()
+
+        # ── 2. Flags vectorizados ──────────────────────────────
+        _rfc_n_rk = _dff_rk["rfc"].astype(str).str.strip().str.upper()
+
+        _fecha_fallo_rk = pd.to_datetime(
+            _dff_rk["Fecha de fallo"] if "Fecha de fallo" in _dff_rk.columns
+            else pd.Series(pd.NaT, index=_dff_rk.index),
+            format="%d/%m/%Y", errors="coerce",
+        )
+        _fecha_firma_rk = pd.to_datetime(
+            _dff_rk["Fecha de firma del contrato"]
+            if "Fecha de firma del contrato" in _dff_rk.columns
+            else pd.Series(pd.NaT, index=_dff_rk.index),
+            format="%d/%m/%Y", errors="coerce",
+        )
+        _fecha_ref_rk = _fecha_fallo_rk.combine_first(_fecha_firma_rk)
+
+        # SABG flags — evalúa TODOS los registros por RFC (fix del bug original)
+        _f_sc_l, _f_sa_l, _f_sm_l, _f_sb_prior_l, _f_sb_unk_l = [], [], [], [], []
+        for _ix2 in _dff_rk.index:
+            _ru2   = _rfc_n_rk.loc[_ix2]
+            _fref2 = _fecha_ref_rk.loc[_ix2]
+            if _ru2 not in _sabg_records_rk:
+                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
+                _f_sb_prior_l.append(False); _f_sb_unk_l.append(False)
+                continue
+            if pd.isna(_fref2):
+                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
+                _f_sb_prior_l.append(False); _f_sb_unk_l.append(True)
+                continue
+            # Evaluar TODOS los registros de inhabilitación del RFC
+            _sc2 = _sa2 = _sm2 = False
+            _any_viol = False
+            for _ini_dt2, _niv2 in _sabg_records_rk[_ru2]:
+                if not pd.isna(_ini_dt2) and _fref2 < _ini_dt2:
+                    continue  # contrato anterior a este período de inhabilitación
+                # Violación: fecha dentro del período (o fecha de inicio desconocida)
+                _any_viol = True
+                _niv2_l = _niv2.lower()
+                if "crítico" in _niv2_l:
+                    _sc2 = True
+                elif "alto" in _niv2_l:
+                    _sa2 = True
+                elif "medio" in _niv2_l:
+                    _sm2 = True
+            if not _any_viol:
+                _f_sc_l.append(False); _f_sa_l.append(False); _f_sm_l.append(False)
+                _f_sb_prior_l.append(True); _f_sb_unk_l.append(False)
+            else:
+                _f_sc_l.append(_sc2)
+                _f_sa_l.append(_sa2 and not _sc2)
+                _f_sm_l.append(_sm2 and not _sc2 and not _sa2)
+                _f_sb_prior_l.append(False); _f_sb_unk_l.append(False)
+
+        _f_sc_rk       = pd.Series(_f_sc_l,       index=_dff_rk.index)
+        _f_sa_rk       = pd.Series(_f_sa_l,       index=_dff_rk.index)
+        _f_sm_rk       = pd.Series(_f_sm_l,       index=_dff_rk.index)
+        _f_sb_prior_rk = pd.Series(_f_sb_prior_l, index=_dff_rk.index)
+        _f_sb_unk_rk   = pd.Series(_f_sb_unk_l,   index=_dff_rk.index)
+
+        _f_ed_rk = _rfc_n_rk.isin(_rfcs_ed_rk)
+        _f_ep_rk = _rfc_n_rk.isin(_rfcs_ep_rk)
+
+        # Zona umbral legal
+        _f_umb_rk = pd.Series(False, index=_dff_rk.index)
+        try:
+            _umbrales_pef_rk = cargar_umbrales_pef()
+            if _umbrales_pef_rk:
+                _TIPOS_AD_RK   = {"Adjudicación Directa", "Adjudicación Directa — Fr. I"}
+                _TIPOS_I3P_RK  = {"Invitación a 3 personas"}
+                _TIPOS_SERV_RK = {"SERVICIOS", "SERVICIOS RELACIONADOS CON LA OBRA", "ARRENDAMIENTOS"}
+                _mask_proc_rk  = _dff_rk["Tipo Simplificado"].isin(_TIPOS_AD_RK | _TIPOS_I3P_RK)
+                _dff_u_rk = _dff_rk[_mask_proc_rk].copy()
+                _dff_u_rk["_fecha_ur"] = pd.to_datetime(
+                    _dff_u_rk["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
+                )
+                _dff_u_rk["_año_ur"] = _dff_u_rk["_fecha_ur"].dt.year
+                _dff_u_rk["_ley_ur"] = (
+                    _dff_u_rk["Ley"].astype(str).str.strip().str.upper()
+                    if "Ley" in _dff_u_rk.columns else "LAASSP"
+                )
+                _dff_u_rk["_cont_ur"] = (
+                    _dff_u_rk["Tipo de contratación"].astype(str).str.strip().str.upper()
+                    if "Tipo de contratación" in _dff_u_rk.columns else "ADQUISICIONES"
+                )
+                _dff_u_rk["_proc_ur"]   = _dff_u_rk["Tipo Simplificado"]
+                _dff_u_rk["_umbral_ur"] = float("nan")
+                for _año_rk2, _th_rk2 in _umbrales_pef_rk.items():
+                    _ma_rk2 = _dff_u_rk["_año_ur"] == _año_rk2
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LAASSP")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_AD_RK),
+                        "_umbral_ur"] = _th_rk2["ad_laassp"]
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LAASSP")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_I3P_RK),
+                        "_umbral_ur"] = _th_rk2["i3p_laassp"]
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LOPSRM")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_AD_RK)
+                        & _dff_u_rk["_cont_ur"].eq("OBRA PÚBLICA"),
+                        "_umbral_ur"] = _th_rk2["ad_obra_lopsrm"]
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LOPSRM")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_AD_RK)
+                        & _dff_u_rk["_cont_ur"].isin(_TIPOS_SERV_RK),
+                        "_umbral_ur"] = _th_rk2["ad_serv_lopsrm"]
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LOPSRM")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_I3P_RK)
+                        & _dff_u_rk["_cont_ur"].eq("OBRA PÚBLICA"),
+                        "_umbral_ur"] = _th_rk2["i3p_obra_lopsrm"]
+                    _dff_u_rk.loc[
+                        _ma_rk2 & _dff_u_rk["_ley_ur"].eq("LOPSRM")
+                        & _dff_u_rk["_proc_ur"].isin(_TIPOS_I3P_RK)
+                        & _dff_u_rk["_cont_ur"].isin(_TIPOS_SERV_RK),
+                        "_umbral_ur"] = _th_rk2["i3p_serv_lopsrm"]
+                _dff_u_rk["_pct_ur"] = _dff_u_rk["Importe DRC"] / _dff_u_rk["_umbral_ur"] * 100
+                _ixs_umb_rk = _dff_u_rk[
+                    _dff_u_rk["_umbral_ur"].notna()
+                    & (_dff_u_rk["_pct_ur"] >= 90)
+                    & (_dff_u_rk["_pct_ur"] < 100)
+                ].index
+                _f_umb_rk.loc[_ixs_umb_rk] = True
+        except Exception:
+            pass
+
+        _tipo_rk = _dff_rk["Tipo Simplificado"]
+        _f_ad_rk  = _tipo_rk == "Adjudicación Directa"
+        _f_fri_rk = _tipo_rk == "Adjudicación Directa — Fr. I"
+        _f_i3p_rk = _tipo_rk == "Invitación a 3 personas"
+
+        # Reciente creación
+        _RFC_PAT_RK = _re_rk.compile(r'^[A-ZÑ&]{3}(\d{2})(\d{2})(\d{2})[A-Z0-9]{3}$')
+
+        def _parse_rfc_rk(rfc):
+            m = _RFC_PAT_RK.match(str(rfc).strip().upper())
+            if not m:
+                return None
+            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if not (1 <= mm <= 12 and 1 <= dd <= 31):
+                return None
+            yr = 2000 + yy if yy <= 30 else 1900 + yy
+            try:
+                return _date_rk(yr, mm, dd)
+            except ValueError:
+                return None
+
+        _fecha_rfc_rk = _dff_rk["rfc"].map(_parse_rfc_rk)
+        _fecha_ini_rk = pd.to_datetime(
+            _dff_rk["Fecha de inicio del contrato"], format="%d/%m/%Y", errors="coerce"
+        ).dt.date
+
+        _edad_rk = pd.Series([
+            (fi - fr).days
+            if (fi is not None and fr is not None
+                and not (isinstance(fi, float) and pd.isna(fi)))
+            else None
+            for fi, fr in zip(_fecha_ini_rk, _fecha_rfc_rk)
+        ], index=_dff_rk.index)
+
+        _f_rc_rk = _edad_rk.apply(lambda x: bool(x is not None and 0 <= x < 365))
+
+        # ── 3. Score base ─────────────────────────────────────
+        _score_base_rk = (
+            _f_sc_rk.astype(int)  * 100 +
+            _f_sa_rk.astype(int)  * 60  +
+            _f_sm_rk.astype(int)  * 30  +
+            _f_ed_rk.astype(int)  * 80  +
+            _f_ep_rk.astype(int)  * 40  +
+            _f_umb_rk.astype(int) * 45  +
+            _f_rc_rk.astype(int)  * 30  +
+            _f_ad_rk.astype(int)  * 20  +
+            _f_fri_rk.astype(int) * 5   +
+            _f_i3p_rk.astype(int) * 5
+        )
+
+        # ── 4. Ponderación por monto ──────────────────────────
+        _monto_pct_rk = _dff_rk["Importe DRC"].rank(pct=True, na_option="bottom")
+        _score_w_rk   = (_score_base_rk * (1.0 + 0.5 * _monto_pct_rk)).round(2)
+        _score_norm_rk = _score_w_rk.clip(upper=100).round(1)
+
+        # ── 5. Etiquetas de alertas ────────────────────────────
+        _alerta_parts_rk = []
+        for _ix in _dff_rk.index:
+            _parts = []
+            _ru = _rfc_n_rk.loc[_ix]
+            if _f_sc_rk.loc[_ix]:              _parts.append("🔴 SABG inhabilitado")
+            elif _f_sa_rk.loc[_ix]:            _parts.append("🟠 SABG suspendido")
+            elif _f_sm_rk.loc[_ix]:            _parts.append("🟡 SABG historial")
+            elif _f_sb_prior_rk.loc[_ix]:      _parts.append("🟤 Fallo previo a inhabilitación")
+            if _ru in _rfcs_ed_rk:             _parts.append("🔴 EFOS definitivo")
+            elif _ru in _rfcs_ep_rk:           _parts.append("🟡 EFOS presunto")
+            if _f_umb_rk.loc[_ix]:             _parts.append("🚦 Zona umbral legal")
+            if _f_rc_rk.loc[_ix]:             _parts.append("🟡 Reciente creación")
+            _tp = _tipo_rk.loc[_ix]
+            if _tp == "Adjudicación Directa":          _parts.append("🔴 Adj. directa")
+            elif _tp == "Adjudicación Directa — Fr. I": _parts.append("⚪ AD — Patentes")
+            elif _tp == "Invitación a 3 personas":      _parts.append("🟡 Inv. 3 personas")
+            _alerta_parts_rk.append(" · ".join(_parts) if _parts else "—")
+
+        _alertas_s_rk = pd.Series(_alerta_parts_rk, index=_dff_rk.index)
+
+        # ── 6. Tabla top N ─────────────────────────────────────
+        _top_rk = (
+            _dff_rk.assign(
+                Score   = _score_norm_rk,
+                Score_raw = _score_w_rk,
+                Alertas = _alertas_s_rk,
+            )
+            .query("Score_raw > 0")
+            .sort_values("Score_raw", ascending=False)
+            .head(_top_n_rk)
+            [["Score", "Alertas",
+              "Proveedor o contratista", "Importe DRC",
+              "Tipo Simplificado", "Nombre de la UC",
+              "Descripción del contrato", "Dirección del anuncio"]]
+            .rename(columns={
+                "Proveedor o contratista": "Proveedor",
+                "Importe DRC":            "Importe",
+                "Tipo Simplificado":      "Tipo",
+                "Nombre de la UC":        "UC",
+                "Descripción del contrato": "Descripción",
+            })
+            .reset_index(drop=True)
+        )
+        _top_rk.index += 1
+
+    # ── KPIs ──────────────────────────────────────────────────
+    _n_con_riesgo_rk = int((_score_w_rk > 0).sum())
+    _n_criticos_rk   = int((_score_norm_rk >= 60).sum())
+    _monto_riesgo_rk = _dff_rk.loc[_score_w_rk > 0, "Importe DRC"].sum()
+
+    _kr1, _kr2, _kr3 = st.columns(3)
+    _kr1.metric(
+        "⚠️ Contratos con algún indicador de riesgo",
+        f"{_n_con_riesgo_rk:,}",
+        delta=(f"{_n_con_riesgo_rk / len(_dff_rk) * 100:.1f}% del total"
+               if len(_dff_rk) > 0 else ""),
+        delta_color="off",
+    )
+    _kr2.metric(
+        "🔴 Contratos con score ≥ 60 (riesgo alto)",
+        f"{_n_criticos_rk:,}",
+    )
+    _kr3.metric(
+        "💰 Monto en contratos con riesgo",
+        (f"${_monto_riesgo_rk/1e9:,.2f} miles de millones MXN"
+         if _monto_riesgo_rk >= 1e9 else f"${_monto_riesgo_rk/1e6:,.1f} M MXN"),
+    )
+
+    # ── Tabla ranking ─────────────────────────────────────────
+    if len(_top_rk) == 0:
+        st.success("✅ No se detectaron contratos con indicadores de riesgo activos.")
+    else:
+        _top_rk["Importe_fmt"] = _top_rk["Importe"].apply(
+            lambda x: (f"${x/1e9:,.2f} mil M" if pd.notna(x) and x >= 1e9
+                       else f"${x/1e6:,.1f} M") if pd.notna(x) else "N/D"
+        )
+        _top_rk["Score"] = _top_rk["Score"].astype(float)
+        _top_rk_show = _top_rk.drop(columns=["Importe"]).rename(
+            columns={"Importe_fmt": "Importe"}
+        )
+        _top_rk_show = _top_rk_show[[
+            "Score", "Alertas", "Proveedor", "Importe",
+            "Tipo", "UC", "Descripción", "Dirección del anuncio"
+        ]]
+        st.dataframe(
+            _top_rk_show,
+            column_config={
+                "Score": st.column_config.ProgressColumn(
+                    "🎯 Score",
+                    help="Score de riesgo ponderado por monto (0–100).",
+                    min_value=0, max_value=100, format="%.1f",
+                ),
+                "Alertas":     st.column_config.TextColumn("🚨 Alertas detectadas", width="large"),
+                "Proveedor":   st.column_config.TextColumn("Proveedor",           width="medium"),
+                "Importe":     st.column_config.TextColumn("💰 Importe",   width="small"),
+                "Tipo":        st.column_config.TextColumn("Tipo",                 width="medium"),
+                "UC":          st.column_config.TextColumn("Unidad Compradora",    width="medium"),
+                "Descripción": st.column_config.TextColumn("Descripción", width="large"),
+                "Dirección del anuncio": st.column_config.LinkColumn(
+                    "🔗 ComprasMX", display_text="Ver contrato"
+                ),
+            },
+            use_container_width=True,
+            height=min(750, 60 + len(_top_rk_show) * 55),
+        )
+
+    st.divider()
+    # ── Ranking de UCs (próximamente) ─────────────────────────
+    st.subheader("🏢 Ranking de Unidades Compradoras por Riesgo Compuesto")
+    st.info(
+        "ℹ️ Próximamente: clasificación de UCs según el score acumulado "
+        "de sus contratos."
+    )
+
+    st.divider()
+
+
 # NAVEGACIÓN PRINCIPAL (st.navigation)
 # ═══════════════════════════════════════════════════════════════
 pg = st.navigation(
@@ -9092,8 +9144,9 @@ pg = st.navigation(
             st.Page(pagina_historica,   title="Evolución Histórica",          icon="📈"),
         ],
         "Indicadores de Riesgo": [
-            st.Page(pagina_riesgo,         title="Indicadores de Riesgo",    icon="🚨"),
-            st.Page(pagina_fragmentacion,  title="Fragmentación",             icon="🧩"),
+            st.Page(pagina_riesgo,           title="Indicadores de Riesgo",    icon="🚨"),
+            st.Page(pagina_ranking_riesgo,   title="Ranking de Riesgo",        icon="🏆"),
+            st.Page(pagina_fragmentacion,    title="Fragmentación",             icon="🧩"),
             st.Page(pagina_colusion,       title="Simulación de Competencia", icon="🕸️"),
             st.Page(pagina_precios,        title="Analítica de Precios",     icon="💊"),
         ],
