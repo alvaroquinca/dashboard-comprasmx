@@ -32,13 +32,14 @@ IMSS_ORO_CLARO   = "#E8D188"   # PANTONE 7402 C
 IMSS_ORO         = "#9D7119"   # PANTONE 1255 C
 
 COLORES_TIPO = {
-    "Licitación Pública":           IMSS_VERDE,
-    "Invitación a 3 personas":      IMSS_ORO,
-    "Adjudicación Directa":         IMSS_ROJO,
-    "Adjudicación Directa — Fr. I": "#C05078",   # Rosa-rojo: AD estructural por patente/exclusividad
-    "Entre Entes Públicos":         IMSS_ORO_CLARO,
-    "Sin clasificar":               IMSS_GRIS,
-    "Otro":                         IMSS_GRIS,
+    "Licitación Pública":              IMSS_VERDE,
+    "Invitación a 3 personas":         IMSS_ORO,
+    "Adjudicación Directa":            IMSS_ROJO,
+    "Adjudicación Directa — Fr. I":    "#C05078",  # Rosa-rojo: AD estructural por patente/exclusividad
+    "Adjudicación Directa — Patentes": "#C05078",  # Alias de display para la misma categoría
+    "Entre Entes Públicos":            IMSS_ORO_CLARO,
+    "Sin clasificar":                  IMSS_GRIS,
+    "Otro":                            IMSS_GRIS,
 }
 
 # ─────────────────────────────────────────────
@@ -841,9 +842,10 @@ def pagina_descripcion():
               a sectores específicos o si hay concentración en grandes empresas a costa de las MIPYMES.
             - **Distribución por monto** — complementa el conteo al mostrar el valor económico que
               cada segmento representa, que puede diferir significativamente del número de contratos.
-            - **Top 20 adjudicaciones directas de alto valor** — identifica los contratos individuales
-              de mayor importe adjudicados sin concurso, que son los de mayor potencial de riesgo
-              por la ausencia de competencia.
+            - **Cuotas Mipymes y cooperativas** — el nuevo Reglamento de la LAASSP establece cuotas
+              específicas para la contratación con micro, pequeñas y medianas empresas (Mipymes), así
+              como con sociedades cooperativas de producción. El análisis por estratificación permite
+              verificar el cumplimiento de estos porcentajes mínimos de gasto con dichos sectores.
             """
         )
 
@@ -1303,6 +1305,7 @@ def pagina_riesgo():
             tabla_cruce["Importe DRC"] = tabla_cruce["Importe DRC"].apply(
                 lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
             )
+            tabla_cruce = tabla_cruce.rename(columns={"Importe DRC": "Importe"})
             tabla_cruce.index += 1
             st.dataframe(
                 tabla_cruce,
@@ -1571,9 +1574,10 @@ def pagina_riesgo():
         ] if c in recientes.columns]
         tabla_rec = recientes[cols_rec].copy().rename(columns={
             "Fecha_RFC": "Fecha constitución (RFC)",
-            "Edad_dias": "Días de antigüedad"
+            "Edad_dias": "Días de antigüedad",
+            "Importe DRC": "Importe",
         }).sort_values("Días de antigüedad").reset_index(drop=True)
-        tabla_rec["Importe DRC"] = tabla_rec["Importe DRC"].apply(
+        tabla_rec["Importe"] = tabla_rec["Importe"].apply(
             lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
         )
         tabla_rec.index += 1
@@ -1699,13 +1703,13 @@ def pagina_riesgo():
         col_art1, col_art2 = st.columns(2)
 
         with col_art1:
-            st.markdown("**Monto bajo excepción (Art. 55/42/20) — Top 20 UCs**")
+            st.markdown("**Monto bajo excepción**")
             top20_monto = resumen_uc.sort_values("Monto_Exc_Total", ascending=False).head(20).copy()
             top20_monto["Monto_fmt"] = top20_monto["Monto_Exc_Total"].apply(
                 lambda x: f"${x/1e6:,.1f} M"
             )
             top20_monto["UC_corta"] = top20_monto["Nombre de la UC"].apply(
-                lambda s: s if len(s) <= 45 else s[:45] + "…"
+                lambda s: s if len(s) <= 30 else s[:30] + "…"
             )
             fig_art1 = px.bar(
                 top20_monto.sort_values("Monto_Exc_Total"),
@@ -1733,10 +1737,10 @@ def pagina_riesgo():
             st.plotly_chart(fig_art1, use_container_width=True)
 
         with col_art2:
-            st.markdown("**% de gasto por excepción respecto al gasto total — Top 20 UCs**")
+            st.markdown("**% de gasto por excepción respecto al gasto total**")
             pct_chart = resumen_uc.sort_values("Pct_Total_Exc", ascending=False).head(20).copy()
             pct_chart["UC_corta"] = pct_chart["Nombre de la UC"].apply(
-                lambda s: s if len(s) <= 45 else s[:45] + "…"
+                lambda s: s if len(s) <= 30 else s[:30] + "…"
             )
             pct_chart["Pct_fmt"] = pct_chart["Pct_Total_Exc"].apply(lambda x: f"{x:.1f}%")
             pct_chart_sorted = pct_chart.sort_values("Pct_Total_Exc").reset_index(drop=True)
@@ -1807,8 +1811,9 @@ def pagina_riesgo():
             art_excepcion[cols_exc]
             .sort_values("Importe DRC", ascending=False)
             .reset_index(drop=True)
+            .rename(columns={"Importe DRC": "Importe"})
         )
-        tabla_det_exc["Importe DRC"] = tabla_det_exc["Importe DRC"].apply(
+        tabla_det_exc["Importe"] = tabla_det_exc["Importe"].apply(
             lambda x: f"${x:,.0f}" if pd.notna(x) else "N/D"
         )
         tabla_det_exc.index += 1
@@ -1940,7 +1945,7 @@ def pagina_riesgo():
     # Top 30 UCs por monto total
     _top30 = _by_uc8.nlargest(30, "Monto_total").sort_values("Pct_LP")
     _top30["UC_corta"] = _top30["Nombre de la UC"].apply(
-        lambda s: s[:50] + "…" if len(s) > 50 else s
+        lambda s: s[:35] + "…" if len(s) > 35 else s
     )
 
     fig_uc8 = px.bar(
@@ -1955,7 +1960,9 @@ def pagina_riesgo():
         font=plotly_font(), xaxis_title="% del monto contratado por LP",
         yaxis_title="", showlegend=False,
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-        xaxis=dict(range=[0, 105])
+        xaxis=dict(range=[0, 115]),
+        height=max(650, len(_top30) * 24 + 120),
+        margin=dict(l=270, r=80, t=60, b=40),
     )
     fig_uc8.update_traces(
         textfont=dict(family="Noto Sans, sans-serif"),
@@ -3100,7 +3107,7 @@ def pagina_explorador():
             vmax3 = pivot3_M.values.max() if pivot3_M.values.max() > 0 else 1
             umbral3 = vmax3 * 0.02
             text3 = [
-                [f"${v:,.0f} M" if v > umbral3 else "" for v in row]
+                [f"${v:,.0f} M" if v > umbral3 else ("—" if v == 0 else "") for v in row]
                 for row in pivot3_M.values
             ]
             fig_heat3 = go.Figure(data=go.Heatmap(
@@ -3557,32 +3564,62 @@ def pagina_historica():
         # ══════════════════════════════════════════════
         st.subheader("Panorama global por año")
 
+        # Métricas compactas de volumen por año
         _gcols = st.columns(len(_anios_h))
         for _i, _yr in enumerate(_anios_h):
             _r = _global_h[_global_h["Año"] == _yr]
             if len(_r) == 0:
                 continue
             _r = _r.iloc[0]
-            # delta vs año anterior
             _prev = _global_h[_global_h["Año"] == str(int(_yr) - 1)]
             with _gcols[_i]:
-                st.markdown(f"### {_yr}")
+                st.markdown(f"#### {_yr}")
                 _delta_m = None
                 if len(_prev) > 0:
                     _delta_m = f"{(_r['Monto_total'] / _prev.iloc[0]['Monto_total'] - 1) * 100:+.1f}% vs {str(int(_yr)-1)}"
                 st.metric(
                     "💰 Monto total",
-                    f"${_r['Monto_total']/1e9:,.2f} miles de millones MXN" if _r["Monto_total"] >= 1e9
+                    f"${_r['Monto_total']/1e9:,.2f} B MXN" if _r["Monto_total"] >= 1e9
                     else f"${_r['Monto_total']/1e6:,.1f} M MXN",
                     delta=_delta_m, delta_color="off"
                 )
                 st.metric("📄 Contratos", f"{int(_r['Contratos']):,}")
-                st.metric(
-                    "🟢 % Licitación Pública",
-                    f"{_r['Pct_LP']:.1f}%"
-                )
-                st.metric("🔴 % AD otras causales", f"{_r['Pct_AD']:.1f}%")
-                st.metric("⚡ % Caso fortuito",     f"{_r['Pct_CF']:.1f}%")
+
+        # Gráfica de líneas — evolución de indicadores clave (%)
+        _global_pct_h = _global_h[["Año", "Pct_LP", "Pct_AD", "Pct_CF"]].melt(
+            id_vars="Año",
+            value_vars=["Pct_LP", "Pct_AD", "Pct_CF"],
+            var_name="Indicador", value_name="Porcentaje"
+        )
+        _global_pct_h["Indicador"] = _global_pct_h["Indicador"].map({
+            "Pct_LP": "% Licitación Pública",
+            "Pct_AD": "% AD otras causales",
+            "Pct_CF": "% Caso fortuito",
+        })
+        _colores_pan_h = {
+            "% Licitación Pública": IMSS_VERDE,
+            "% AD otras causales":  IMSS_ROJO,
+            "% Caso fortuito":      IMSS_ORO,
+        }
+        fig_panorama_h = px.line(
+            _global_pct_h, x="Año", y="Porcentaje", color="Indicador",
+            markers=True,
+            color_discrete_map=_colores_pan_h,
+            labels={"Porcentaje": "% del monto contratado"},
+        )
+        fig_panorama_h.add_hline(
+            y=65, line_dash="dash", line_color=IMSS_ORO,
+            annotation_text="Referencia 65% LP", annotation_position="top right",
+            annotation_font=dict(family="Noto Sans, sans-serif", color=IMSS_ORO, size=12)
+        )
+        fig_panorama_h.update_traces(line=dict(width=3), marker=dict(size=10))
+        fig_panorama_h.update_layout(
+            font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            yaxis=dict(range=[0, 105], title="% del monto contratado"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(t=60, b=40),
+        )
+        st.plotly_chart(fig_panorama_h, use_container_width=True)
 
         st.divider()
 
@@ -3615,25 +3652,6 @@ def pagina_historica():
             hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Monto: $%{y:,.0f}<extra></extra>"
         )
         st.plotly_chart(fig_evo_t, use_container_width=True)
-
-        # Línea: % LP global por año
-        fig_pct_h = px.line(
-            _global_h, x="Año", y="Pct_LP", markers=True,
-            title="% del monto contratado por Licitación Pública — evolución anual",
-            labels={"Pct_LP": "% Licitación Pública"},
-            color_discrete_sequence=[IMSS_VERDE]
-        )
-        fig_pct_h.add_hline(
-            y=65, line_dash="dash", line_color=IMSS_ORO,
-            annotation_text="Referencia 65% LP", annotation_position="top right",
-            annotation_font=dict(family="Noto Sans, sans-serif", color=IMSS_ORO, size=12)
-        )
-        fig_pct_h.update_layout(
-            font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-            yaxis=dict(range=[0, 105])
-        )
-        fig_pct_h.update_traces(line=dict(width=3), marker=dict(size=10))
-        st.plotly_chart(fig_pct_h, use_container_width=True)
 
         st.divider()
 
