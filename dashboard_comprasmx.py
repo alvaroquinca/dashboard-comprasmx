@@ -5600,6 +5600,32 @@ def pagina_mapa_riesgo():
     if _info_parts:
         st.markdown("  \u00a0|\u00a0  ".join(_info_parts))
 
+    # ─────────────────────────────────────────────────────────────────────
+    # PDF Export — button (top; generation triggered at end of section)
+    # ─────────────────────────────────────────────────────────────────────
+    _pdf_state_key = f"pdf_bytes_mr_{str(_sel_mr)[:30]}"
+    _pdf_flag_key  = f"pdf_flag_mr_{str(_sel_mr)[:30]}"
+    _c_pdf1, _c_pdf2 = st.columns([1, 3])
+    if _c_pdf1.button(
+        "\U0001f4c4 Generar PDF del Perfil UC",
+        use_container_width=True,
+        key="btn_gen_pdf_mr",
+        help="Genera un PDF A4 horizontal con numeralia y visualizaciones",
+    ):
+        st.session_state[_pdf_flag_key] = True
+        st.session_state.pop(_pdf_state_key, None)
+    if st.session_state.get(_pdf_state_key):
+        _c_pdf2.download_button(
+            "\u2b07\ufe0f Descargar PDF del Perfil UC",
+            data=st.session_state[_pdf_state_key],
+            file_name=f"perfil_uc_{str(_label_mr).replace(' ', '_')[:30]}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key="btn_dl_pdf_mr",
+        )
+    elif st.session_state.get(_pdf_flag_key):
+        _c_pdf2.info("\u23f3 Generando PDF\u2026 espera un momento.")
+
     st.divider()
 
     # \u2500\u2500 3. Riesgos espec\u00edficos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -5870,23 +5896,24 @@ def pagina_mapa_riesgo():
     st.plotly_chart(_fig_donut_mr, use_container_width=True)
 
 
-    st.divider()
-
     # ─────────────────────────────────────────────────────────────────────
-    # PDF Export
+    # PDF generation (triggered by flag set at top of section)
     # ─────────────────────────────────────────────────────────────────────
-    _pdf_state_key = f"pdf_bytes_mr_{str(_sel_mr)[:30]}"
-    _c_pdf1, _c_pdf2 = st.columns([1, 2])
-    if _c_pdf1.button(
-        "\U0001f4c4 Generar PDF del Perfil UC",
-        use_container_width=True,
-        key="btn_gen_pdf_mr",
-        help="Genera un PDF con numeralia y visualizaciones de esta UC o Adscripción",
-    ):
-        with st.spinner("Generando PDF con visualizaciones\u2026 puede tardar unos segundos \u23f3"):
+    if st.session_state.get(_pdf_flag_key):
+        with st.spinner("Generando PDF con visualizaciones\u2026 \u23f3"):
             try:
                 from fpdf import FPDF as _FPDF_MR
                 import io as _io_mr
+
+                def _s(text):
+                    """Sanitize string for fpdf Helvetica (latin-1 safe)."""
+                    t = str(text)
+                    t = (t.replace('\u2014', '--').replace('\u2013', '-')
+                          .replace('\u2026', '...').replace('\u201c', '"')
+                          .replace('\u201d', '"')
+                          .replace('\u2018', "'")
+                          .replace('\u2019', "'"))
+                    return t.encode('latin-1', errors='replace').decode('latin-1')
 
                 _pdf_obj = _FPDF_MR(orientation="L", unit="mm", format="A4")
                 _pdf_obj.set_auto_page_break(auto=True, margin=12)
@@ -5897,16 +5924,18 @@ def pagina_mapa_riesgo():
                 _pdf_obj.set_font("Helvetica", "B", 15)
                 _pdf_obj.set_text_color(11, 84, 69)
                 _pdf_obj.cell(
-                    0, 10,
-                    f"Perfil UC \u2014 {str(_label_mr)[:75]}",
+                    0, 10, _s(f"Perfil UC -- {str(_label_mr)[:75]}"),
                     new_x="LMARGIN", new_y="NEXT",
                 )
                 _pdf_obj.set_font("Helvetica", "", 9)
                 _pdf_obj.set_text_color(23, 27, 25)
                 if _tipo_vista_mr == "UC espec\u00edfica":
-                    _pdf_meta_str = f"Tipo UC: {_meta_tipo_mr}   |   Adscripci\u00f3n: {_meta_adsc_mr}"
+                    _pdf_meta_str = _s(
+                        f"Tipo UC: {_meta_tipo_mr or '--'}   |   "
+                        f"Adscripcion: {_meta_adsc_mr or '--'}"
+                    )
                 else:
-                    _pdf_meta_str = f"Adscripci\u00f3n: {_meta_adsc_mr}"
+                    _pdf_meta_str = _s(f"Adscripcion: {_meta_adsc_mr}")
                 _pdf_obj.cell(0, 6, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
                 _pdf_obj.ln(3)
 
@@ -5922,7 +5951,7 @@ def pagina_mapa_riesgo():
                 )
                 _kpi_labels_pdf = [
                     "Contratos", "Monto total",
-                    "Proveedores \u00fanicos", "% Monto LP", "% Monto AD",
+                    "Proveedores unicos", "% Monto LP", "% Monto AD",
                 ]
                 _kpi_values_pdf = [
                     f"{_total_mr:,}", _monto_pdf_str,
@@ -5931,20 +5960,20 @@ def pagina_mapa_riesgo():
                 _cw_pdf = _pdf_obj.epw / 5
                 for _lbl in _kpi_labels_pdf:
                     _pdf_obj.set_font("Helvetica", "B", 8)
-                    _pdf_obj.cell(_cw_pdf, 5, _lbl)
+                    _pdf_obj.cell(_cw_pdf, 5, _s(_lbl))
                 _pdf_obj.ln(5)
                 for _val in _kpi_values_pdf:
                     _pdf_obj.set_font("Helvetica", "", 10)
-                    _pdf_obj.cell(_cw_pdf, 6, _val)
+                    _pdf_obj.cell(_cw_pdf, 6, _s(_val))
                 _pdf_obj.ln(10)
 
                 # ── Charts ──
                 _charts_export = [
-                    ("Distribuci\u00f3n por Tipo de Procedimiento (contratos)", _fig_pA1),
-                    ("Distribuci\u00f3n por Tipo de Procedimiento (monto)", _fig_pA2),
+                    ("Distribucion por Tipo de Procedimiento (contratos)", _fig_pA1),
+                    ("Distribucion por Tipo de Procedimiento (monto)", _fig_pA2),
                     ("Proveedores por Monto Contratado", _fig_pB),
                     ("Gasto por Partida Presupuestaria (CUCoP)", _fig_pC),
-                    ("Distribuci\u00f3n de Proveedores en la UC (HHI)", _fig_donut_mr),
+                    ("Distribucion de Proveedores en la UC (HHI)", _fig_donut_mr),
                 ]
                 for _chart_title, _chart_fig in _charts_export:
                     if _chart_fig is None:
@@ -5956,7 +5985,7 @@ def pagina_mapa_riesgo():
                         _pdf_obj.set_font("Helvetica", "B", 10)
                         _pdf_obj.set_text_color(11, 84, 69)
                         _pdf_obj.cell(
-                            0, 6, _chart_title,
+                            0, 6, _s(_chart_title),
                             new_x="LMARGIN", new_y="NEXT",
                         )
                         _pdf_obj.image(_io_mr.BytesIO(_img_bytes), w=_pdf_obj.epw)
@@ -5969,28 +5998,15 @@ def pagina_mapa_riesgo():
                 _pdf_obj.set_text_color(134, 134, 136)
                 _pdf_obj.cell(
                     0, 5,
-                    "Divisi\u00f3n de Monitoreo de la Integridad Institucional \u2013 IMSS | ComprasMX 2026",
+                    _s("Division de Monitoreo de la Integridad Institucional -- IMSS | ComprasMX 2026"),
                     align="C",
                 )
 
                 st.session_state[_pdf_state_key] = bytes(_pdf_obj.output())
-            except ImportError:
-                st.error(
-                    "\u26a0\ufe0f kaleido no instalado. "
-                    "Ejecutar: `pip install kaleido` y reiniciar el servidor."
-                )
             except Exception as _e_pdf:
                 st.error(f"\u26a0\ufe0f Error generando PDF: {_e_pdf}")
-
-    if st.session_state.get(_pdf_state_key):
-        _c_pdf2.download_button(
-            "\u2b07\ufe0f Descargar PDF del Perfil UC",
-            data=st.session_state[_pdf_state_key],
-            file_name=f"perfil_uc_{str(_label_mr).replace(' ', '_')[:30]}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-            key="btn_dl_pdf_mr",
-        )
+        st.session_state[_pdf_flag_key] = False
+        st.rerun()
 
     st.divider()
 
