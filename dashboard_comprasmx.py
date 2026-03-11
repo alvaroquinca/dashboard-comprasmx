@@ -5603,6 +5603,315 @@ def pagina_mapa_riesgo():
     st.divider()
 
     # \u2500\u2500 3. Riesgos espec\u00edficos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # ─────────────────────────────────────────────────────────────────────
+    # VIZ A — Distribución por Tipo de Procedimiento
+    # ─────────────────────────────────────────────────────────────────────
+    st.subheader("📊 Distribución por Tipo de Procedimiento")
+    _TIPO_RENAME_MR = {"Adjudicación Directa — Fr. I": "Adjudicación Directa — Patentes"}
+
+    _col_pA1, _col_pA2 = st.columns(2)
+    with _col_pA1:
+        _dist_num_mr = (
+            _dff_sel["Tipo Simplificado"]
+            .replace(_TIPO_RENAME_MR)
+            .value_counts()
+            .reset_index()
+        )
+        _dist_num_mr.columns = ["Tipo", "Contratos"]
+        _fig_pA1 = px.pie(
+            _dist_num_mr, names="Tipo", values="Contratos",
+            color="Tipo", color_discrete_map=COLORES_TIPO,
+            title="Por número de contratos", hole=0.35,
+        )
+        _fig_pA1.update_traces(
+            textinfo="percent", textposition="inside",
+            insidetextorientation="horizontal",
+            textfont=dict(family="Noto Sans, sans-serif", size=13),
+            hovertemplate="<b>%{label}</b><br>Contratos: %{value:,}<br>%{percent}<extra></extra>",
+        )
+        _fig_pA1.update_layout(
+            font=plotly_font(), title_font_color=IMSS_VERDE_OSC,
+            legend=dict(orientation="v", font=dict(family="Noto Sans, sans-serif", size=11),
+                        x=1.01, y=0.5, xanchor="left"),
+            margin=dict(r=160),
+        )
+        _col_pA1.plotly_chart(_fig_pA1, use_container_width=True)
+
+    with _col_pA2:
+        _dist_monto_mr = _dff_sel.copy()
+        _dist_monto_mr["Tipo Simplificado"] = _dist_monto_mr["Tipo Simplificado"].replace(_TIPO_RENAME_MR)
+        _dist_monto_mr = (
+            _dist_monto_mr.groupby("Tipo Simplificado")["Importe DRC"]
+            .sum().reset_index()
+        )
+        _dist_monto_mr.columns = ["Tipo", "Monto"]
+        _fig_pA2 = px.pie(
+            _dist_monto_mr, names="Tipo", values="Monto",
+            color="Tipo", color_discrete_map=COLORES_TIPO,
+            title="Por monto total", hole=0.35,
+        )
+        _fig_pA2.update_traces(
+            textinfo="percent", textposition="inside",
+            insidetextorientation="horizontal",
+            textfont=dict(family="Noto Sans, sans-serif", size=13),
+            hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.0f}<br>%{percent}<extra></extra>",
+        )
+        _fig_pA2.update_layout(
+            font=plotly_font(), title_font_color=IMSS_VERDE_OSC,
+            legend=dict(orientation="v", font=dict(family="Noto Sans, sans-serif", size=11),
+                        x=1.01, y=0.5, xanchor="left"),
+            margin=dict(r=160),
+        )
+        _col_pA2.plotly_chart(_fig_pA2, use_container_width=True)
+
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # VIZ B — Proveedores por Monto Contratado
+    # ─────────────────────────────────────────────────────────────────────
+    st.subheader("🏢 Proveedores por Monto Contratado")
+    _prov_mr = (
+        _dff_sel.groupby(["Proveedor o contratista", "rfc"])["Importe DRC"]
+        .sum().reset_index()
+        .sort_values("Importe DRC", ascending=False)
+        .head(15)
+    )
+    _prov_mr["Share_mr"]   = (_prov_mr["Importe DRC"] / _monto_mr * 100) if _monto_mr > 0 else 0
+    _prov_mr["Share_fmt"]  = _prov_mr["Share_mr"].apply(lambda x: f"{x:.1f}%")
+    _prov_mr["Prov_c"]     = _prov_mr["Proveedor o contratista"].apply(
+        lambda s: str(s)[:48] + "…" if len(str(s)) > 48 else str(s)
+    )
+    _prov_mr = _prov_mr.sort_values("Importe DRC", ascending=True)
+
+    _fig_pB = px.bar(
+        _prov_mr, x="Importe DRC", y="Prov_c",
+        orientation="h",
+        color="Share_mr",
+        color_continuous_scale=[[0, IMSS_VERDE], [0.5, IMSS_ORO_CLARO], [1, IMSS_ROJO]],
+        range_color=[0, 100],
+        text="Share_fmt",
+        custom_data=["Proveedor o contratista", "rfc", "Share_mr"],
+    )
+    _fig_pB.update_layout(
+        font=plotly_font(), plot_bgcolor="white", paper_bgcolor="white",
+        height=max(300, len(_prov_mr) * 32 + 70),
+        margin=dict(l=10, r=80, t=20, b=40),
+        xaxis=dict(title="Monto contratado (MXN)", tickprefix="$", tickformat=",.0f"),
+        yaxis=dict(title=""),
+        coloraxis_colorbar=dict(title="% del total<br>de la UC", ticksuffix="%"),
+    )
+    _fig_pB.update_traces(
+        textposition="outside", cliponaxis=False,
+        textfont=dict(family="Noto Sans, sans-serif"),
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "RFC: %{customdata[1]}<br>"
+            "% de la UC: %{customdata[2]:.1f}%<br>"
+            "Monto: $%{x:,.0f}<extra></extra>"
+        ),
+    )
+    st.plotly_chart(_fig_pB, use_container_width=True)
+
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # VIZ C — Gasto por Partida Presupuestaria (CUCoP)
+    # ─────────────────────────────────────────────────────────────────────
+    st.subheader("💰 Gasto por Partida Presupuestaria (CUCoP)")
+    if len(df_cucop) > 0 and "Partida específica" in _dff_sel.columns:
+        _exp_mr = _dff_sel.copy()
+        _exp_mr["_lista_mr"] = _exp_mr["Partida específica"].str.split(",")
+        _exp_mr["_n_mr"]     = _exp_mr["_lista_mr"].apply(len)
+        _exp_mr["Importe DRC"] = _exp_mr["Importe DRC"] / _exp_mr["_n_mr"]
+        _exp_mr = _exp_mr.explode("_lista_mr")
+        _exp_mr["Partida específica"] = _exp_mr["_lista_mr"].str.strip().str.zfill(5)
+        _exp_mr = _exp_mr.drop(columns=["_lista_mr", "_n_mr"])
+
+        _cucop_cols = [
+            c for c in ["PARTIDA ESPECÍFICA", "DESC. PARTIDA ESPECÍFICA",
+                         "PARTIDA GENÉRICA", "DESC. PARTIDA GENÉRICA",
+                         "CONCEPTO", "DESC. CONCEPTO", "CAPÍTULO", "DESC. CAPÍTULO"]
+            if c in df_cucop.columns
+        ]
+        _cucop_mr = _exp_mr.merge(
+            df_cucop[_cucop_cols].drop_duplicates(subset=["PARTIDA ESPECÍFICA"]),
+            left_on="Partida específica", right_on="PARTIDA ESPECÍFICA", how="left",
+        )
+
+        _nivel_mr = st.radio(
+            "Agrupar por:",
+            ["Partida específica", "Partida genérica", "Capítulo"],
+            horizontal=True, key="mr_nivel_cucop",
+        )
+
+        if _nivel_mr == "Partida específica":
+            _cucop_mr["_etq_mr"] = (
+                _cucop_mr["Partida específica"] + " — " +
+                _cucop_mr.get("DESC. PARTIDA ESPECÍFICA", pd.Series()).fillna("Sin descripción")
+            )
+        elif _nivel_mr == "Partida genérica":
+            _cucop_mr["_etq_mr"] = (
+                _cucop_mr["Partida específica"].str[:4] + " — " +
+                _cucop_mr.get("DESC. PARTIDA GENÉRICA", pd.Series()).fillna("Sin descripción")
+            )
+        else:
+            _cucop_mr["_etq_mr"] = (
+                _cucop_mr["Partida específica"].str[:1] + "000 — " +
+                _cucop_mr.get("DESC. CAPÍTULO", pd.Series()).fillna("Sin descripción")
+            )
+
+        _gasto_mr = (
+            _cucop_mr.groupby("_etq_mr")["Importe DRC"]
+            .sum().sort_values(ascending=False).head(15).reset_index()
+        )
+        _gasto_mr.columns = ["Partida", "Monto"]
+        _gasto_mr["Etq_c"] = _gasto_mr["Partida"].apply(
+            lambda s: s if len(str(s)) <= 55 else str(s)[:55] + "…"
+        )
+        _gasto_mr = _gasto_mr.sort_values("Monto", ascending=True)
+
+        if len(_gasto_mr) > 0:
+            _fig_pC = go.Figure(go.Bar(
+                y=_gasto_mr["Etq_c"],
+                x=_gasto_mr["Monto"],
+                orientation="h",
+                marker_color=IMSS_VERDE,
+                text=_gasto_mr["Monto"].apply(lambda v: f"${v/1e6:.1f} M"),
+                textposition="outside",
+                customdata=_gasto_mr["Partida"].values,
+                hovertemplate="<b>%{customdata}</b><br>Monto: $%{x:,.0f}<extra></extra>",
+            ))
+            _fig_pC.update_layout(
+                height=max(320, len(_gasto_mr) * 30 + 60),
+                margin=dict(l=10, r=90, t=20, b=40),
+                xaxis=dict(title="Monto (MXN)", tickprefix="$", tickformat=",.0f"),
+                yaxis=dict(title=""),
+                plot_bgcolor="white", paper_bgcolor="white",
+                font=dict(family="Noto Sans", size=12),
+            )
+            st.plotly_chart(_fig_pC, use_container_width=True)
+        else:
+            st.info("ℹ️ Sin datos de partidas disponibles para esta UC.")
+    else:
+        st.info("ℹ️ Catálogo CUCoP no disponible o sin datos de partidas.")
+
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # VIZ D — Distribución de Proveedores en la UC
+    # ─────────────────────────────────────────────────────────────────────
+    st.subheader("🔍 Distribución de Proveedores en la UC")
+
+    _prov_dist_mr = (
+        _dff_sel.groupby(["Proveedor o contratista", "rfc"])
+        .agg(Monto=("Importe DRC", "sum"), Contratos=("Importe DRC", "count"))
+        .reset_index()
+        .sort_values("Monto", ascending=False)
+        .reset_index(drop=True)
+    )
+    _prov_dist_mr["Share"] = (
+        _prov_dist_mr["Monto"] / _monto_mr if _monto_mr > 0 else 0
+    )
+
+    # HHI
+    _hhi_mr = float((_prov_dist_mr["Share"] ** 2).sum() * 10000)
+    if _hhi_mr < 1500:
+        _nivel_hhi_mr = "Competitivo (< 1,500)"
+    elif _hhi_mr < 2500:
+        _nivel_hhi_mr = "Moderadamente concentrado"
+    else:
+        _nivel_hhi_mr = "Altamente concentrado (> 2,500)"
+
+    _kh1, _kh2, _kh3 = st.columns(3)
+    _kh1.metric("Núm. proveedores",        f"{len(_prov_dist_mr):,}")
+    _kh2.metric("Índice HHI",              f"{_hhi_mr:,.0f}",
+                delta=_nivel_hhi_mr, delta_color="off")
+    _kh3.metric("% del proveedor principal",
+                f"{_prov_dist_mr['Share'].iloc[0]*100:.1f}%"
+                if len(_prov_dist_mr) > 0 else "—")
+
+    _col_donut_mr, _col_bar_mr = st.columns(2)
+
+    # Donut: top 8 + Otros
+    _pie_top8_mr  = _prov_dist_mr.head(8).copy()
+    _monto_otros_mr = _prov_dist_mr.iloc[8:]["Monto"].sum()
+    if _monto_otros_mr > 0:
+        _otros_mr = pd.DataFrame({
+            "Proveedor o contratista": ["Otros proveedores"], "rfc": ["—"],
+            "Monto": [_monto_otros_mr], "Contratos": [0],
+            "Share": [_monto_otros_mr / _monto_mr if _monto_mr > 0 else 0],
+        })
+        _pie_data_mr = pd.concat([_pie_top8_mr, _otros_mr], ignore_index=True)
+    else:
+        _pie_data_mr = _pie_top8_mr.copy()
+
+    _pie_data_mr["Prov_c"] = _pie_data_mr["Proveedor o contratista"].apply(
+        lambda s: str(s)[:42] + "…" if len(str(s)) > 42 else str(s)
+    )
+    _pie_palette_mr = (
+        [IMSS_ROJO if len(_prov_dist_mr) > 0 and _prov_dist_mr["Share"].iloc[0] >= 0.50 else IMSS_VERDE]
+        + [IMSS_ORO, "#5D8AA8", IMSS_ORO_CLARO, IMSS_VERDE_OSC,
+           "#8B5CF6", "#6B7280", IMSS_GRIS, IMSS_NEGRO]
+    )[:len(_pie_data_mr)]
+
+    _fig_donut_mr = px.pie(
+        _pie_data_mr, names="Prov_c", values="Monto",
+        color="Prov_c", color_discrete_sequence=_pie_palette_mr,
+        title="Distribución del gasto por proveedor", hole=0.42,
+    )
+    _fig_donut_mr.update_traces(
+        texttemplate="<b>%{label}</b><br>%{percent:.1%}",
+        textposition="outside",
+        hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.0f}<br>%{percent:.1%}<extra></extra>",
+    )
+    _fig_donut_mr.update_layout(
+        font=plotly_font(), showlegend=False,
+        plot_bgcolor="white", paper_bgcolor="white", height=440,
+    )
+    _col_donut_mr.plotly_chart(_fig_donut_mr, use_container_width=True)
+
+    # Barras horizontales: top 15 proveedores
+    _bar_prov_mr = (
+        _prov_dist_mr.head(15).copy()
+        .sort_values("Monto", ascending=True)
+    )
+    _bar_prov_mr["Prov_c"]    = _bar_prov_mr["Proveedor o contratista"].apply(
+        lambda s: str(s)[:48] + "…" if len(str(s)) > 48 else str(s)
+    )
+    _bar_prov_mr["Share_Pct"] = (_bar_prov_mr["Share"] * 100).round(1)
+    _bar_prov_mr["Share_fmt"] = _bar_prov_mr["Share_Pct"].apply(lambda x: f"{x:.1f}%")
+
+    _fig_bar_mr = px.bar(
+        _bar_prov_mr, x="Monto", y="Prov_c",
+        orientation="h",
+        color="Share_Pct",
+        color_continuous_scale=[[0, IMSS_VERDE], [0.5, IMSS_ORO_CLARO], [1, IMSS_ROJO]],
+        range_color=[0, 100],
+        text="Share_fmt",
+        title="Monto por proveedor (top 15)",
+        custom_data=["Proveedor o contratista", "rfc", "Share_Pct"],
+    )
+    _fig_bar_mr.update_layout(
+        font=plotly_font(), plot_bgcolor="white", paper_bgcolor="white",
+        xaxis_title="Monto contratado (MXN)", yaxis_title="",
+        xaxis=dict(tickprefix="$", tickformat=",.0f"),
+        coloraxis_colorbar=dict(title="% del total", ticksuffix="%"),
+        height=440,
+    )
+    _fig_bar_mr.update_traces(
+        textposition="outside", cliponaxis=False,
+        textfont=dict(family="Noto Sans, sans-serif"),
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "RFC: %{customdata[1]}<br>"
+            "% del total: %{customdata[2]:.1f}%<br>"
+            "Monto: $%{x:,.0f}<extra></extra>"
+        ),
+    )
+    _col_bar_mr.plotly_chart(_fig_bar_mr, use_container_width=True)
+
+    st.divider()
+
     st.subheader("\U0001f6a8 Riesgos espec\u00edficos detectados")
 
     _rfc_norm_mr    = _dff_sel["rfc"].astype(str).str.strip().str.upper()
