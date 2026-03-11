@@ -5683,32 +5683,30 @@ def pagina_mapa_riesgo():
     )
     _prov_mr = _prov_mr.sort_values("Importe DRC", ascending=True)
 
-    _fig_pB = px.bar(
-        _prov_mr, x="Importe DRC", y="Prov_c",
-        orientation="h",
+    _fig_pB = px.treemap(
+        _prov_mr,
+        path=["Prov_c"],
+        values="Importe DRC",
         color="Share_mr",
-        color_continuous_scale=[[0, IMSS_VERDE], [0.5, IMSS_ORO_CLARO], [1, IMSS_ROJO]],
+        color_continuous_scale=[[0, IMSS_VERDE_OSC], [0.5, IMSS_VERDE], [1, IMSS_ORO_CLARO]],
         range_color=[0, 100],
-        text="Share_fmt",
-        custom_data=["Proveedor o contratista", "rfc", "Share_mr"],
-    )
-    _fig_pB.update_layout(
-        font=plotly_font(), plot_bgcolor="white", paper_bgcolor="white",
-        height=max(300, len(_prov_mr) * 32 + 70),
-        margin=dict(l=10, r=80, t=20, b=40),
-        xaxis=dict(title="Monto contratado (MXN)", tickprefix="$", tickformat=",.0f"),
-        yaxis=dict(title=""),
-        coloraxis_colorbar=dict(title="% del total<br>de la UC", ticksuffix="%"),
+        custom_data=["Proveedor o contratista", "rfc", "Share_fmt"],
     )
     _fig_pB.update_traces(
-        textposition="outside", cliponaxis=False,
-        textfont=dict(family="Noto Sans, sans-serif"),
+        texttemplate="<b>%{label}</b><br>%{customdata[2]}",
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "RFC: %{customdata[1]}<br>"
-            "% de la UC: %{customdata[2]:.1f}%<br>"
-            "Monto: $%{x:,.0f}<extra></extra>"
+            "% de la UC: %{customdata[2]}<br>"
+            "Monto: $%{value:,.0f}<extra></extra>"
         ),
+        textfont=dict(family="Noto Sans, sans-serif", size=12),
+    )
+    _fig_pB.update_layout(
+        font=plotly_font(),
+        height=460,
+        margin=dict(l=10, r=10, t=20, b=10),
+        coloraxis_colorbar=dict(title="% del total<br>de la UC", ticksuffix="%"),
     )
     st.plotly_chart(_fig_pB, use_container_width=True)
 
@@ -5718,6 +5716,7 @@ def pagina_mapa_riesgo():
     # VIZ C — Gasto por Partida Presupuestaria (CUCoP)
     # ─────────────────────────────────────────────────────────────────────
     st.subheader("💰 Gasto por Partida Presupuestaria (CUCoP)")
+    _fig_pC = None  # initialized for PDF export; set below if CUCoP data available
     if len(df_cucop) > 0 and "Partida específica" in _dff_sel.columns:
         _exp_mr = _dff_sel.copy()
         _exp_mr["_lista_mr"] = _exp_mr["Partida específica"].str.split(",")
@@ -5771,23 +5770,25 @@ def pagina_mapa_riesgo():
         _gasto_mr = _gasto_mr.sort_values("Monto", ascending=True)
 
         if len(_gasto_mr) > 0:
-            _fig_pC = go.Figure(go.Bar(
-                y=_gasto_mr["Etq_c"],
-                x=_gasto_mr["Monto"],
-                orientation="h",
-                marker_color=IMSS_VERDE,
-                text=_gasto_mr["Monto"].apply(lambda v: f"${v/1e6:.1f} M"),
-                textposition="outside",
-                customdata=_gasto_mr["Partida"].values,
-                hovertemplate="<b>%{customdata}</b><br>Monto: $%{x:,.0f}<extra></extra>",
-            ))
+            _gasto_mr["Monto_fmt"] = _gasto_mr["Monto"].apply(lambda v: f"${v/1e6:.1f} M")
+            _fig_pC = px.treemap(
+                _gasto_mr,
+                path=["Etq_c"],
+                values="Monto",
+                color="Monto",
+                color_continuous_scale=[[0, IMSS_VERDE_OSC], [1, IMSS_VERDE]],
+                custom_data=["Partida", "Monto_fmt"],
+            )
+            _fig_pC.update_traces(
+                texttemplate="<b>%{label}</b><br>%{customdata[1]}",
+                hovertemplate="<b>%{customdata[0]}</b><br>Monto: %{customdata[1]}<extra></extra>",
+                textfont=dict(family="Noto Sans, sans-serif", size=12),
+            )
             _fig_pC.update_layout(
-                height=max(320, len(_gasto_mr) * 30 + 60),
-                margin=dict(l=10, r=90, t=20, b=40),
-                xaxis=dict(title="Monto (MXN)", tickprefix="$", tickformat=",.0f"),
-                yaxis=dict(title=""),
-                plot_bgcolor="white", paper_bgcolor="white",
-                font=dict(family="Noto Sans", size=12),
+                font=plotly_font(),
+                height=460,
+                margin=dict(l=10, r=10, t=20, b=10),
+                coloraxis_showscale=False,
             )
             st.plotly_chart(_fig_pC, use_container_width=True)
         else:
@@ -5830,9 +5831,7 @@ def pagina_mapa_riesgo():
                 f"{_prov_dist_mr['Share'].iloc[0]*100:.1f}%"
                 if len(_prov_dist_mr) > 0 else "—")
 
-    _col_donut_mr, _col_bar_mr = st.columns(2)
-
-    # Donut: top 8 + Otros
+    # Donut full-width: top 8 + Otros
     _pie_top8_mr  = _prov_dist_mr.head(8).copy()
     _monto_otros_mr = _prov_dist_mr.iloc[8:]["Monto"].sum()
     if _monto_otros_mr > 0:
@@ -5866,49 +5865,132 @@ def pagina_mapa_riesgo():
     )
     _fig_donut_mr.update_layout(
         font=plotly_font(), showlegend=False,
-        plot_bgcolor="white", paper_bgcolor="white", height=440,
+        plot_bgcolor="white", paper_bgcolor="white", height=520,
     )
-    _col_donut_mr.plotly_chart(_fig_donut_mr, use_container_width=True)
+    st.plotly_chart(_fig_donut_mr, use_container_width=True)
 
-    # Barras horizontales: top 15 proveedores
-    _bar_prov_mr = (
-        _prov_dist_mr.head(15).copy()
-        .sort_values("Monto", ascending=True)
-    )
-    _bar_prov_mr["Prov_c"]    = _bar_prov_mr["Proveedor o contratista"].apply(
-        lambda s: str(s)[:48] + "…" if len(str(s)) > 48 else str(s)
-    )
-    _bar_prov_mr["Share_Pct"] = (_bar_prov_mr["Share"] * 100).round(1)
-    _bar_prov_mr["Share_fmt"] = _bar_prov_mr["Share_Pct"].apply(lambda x: f"{x:.1f}%")
 
-    _fig_bar_mr = px.bar(
-        _bar_prov_mr, x="Monto", y="Prov_c",
-        orientation="h",
-        color="Share_Pct",
-        color_continuous_scale=[[0, IMSS_VERDE], [0.5, IMSS_ORO_CLARO], [1, IMSS_ROJO]],
-        range_color=[0, 100],
-        text="Share_fmt",
-        title="Monto por proveedor (top 15)",
-        custom_data=["Proveedor o contratista", "rfc", "Share_Pct"],
-    )
-    _fig_bar_mr.update_layout(
-        font=plotly_font(), plot_bgcolor="white", paper_bgcolor="white",
-        xaxis_title="Monto contratado (MXN)", yaxis_title="",
-        xaxis=dict(tickprefix="$", tickformat=",.0f"),
-        coloraxis_colorbar=dict(title="% del total", ticksuffix="%"),
-        height=440,
-    )
-    _fig_bar_mr.update_traces(
-        textposition="outside", cliponaxis=False,
-        textfont=dict(family="Noto Sans, sans-serif"),
-        hovertemplate=(
-            "<b>%{customdata[0]}</b><br>"
-            "RFC: %{customdata[1]}<br>"
-            "% del total: %{customdata[2]:.1f}%<br>"
-            "Monto: $%{x:,.0f}<extra></extra>"
-        ),
-    )
-    _col_bar_mr.plotly_chart(_fig_bar_mr, use_container_width=True)
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PDF Export
+    # ─────────────────────────────────────────────────────────────────────
+    _pdf_state_key = f"pdf_bytes_mr_{str(_sel_mr)[:30]}"
+    _c_pdf1, _c_pdf2 = st.columns([1, 2])
+    if _c_pdf1.button(
+        "\U0001f4c4 Generar PDF del Perfil UC",
+        use_container_width=True,
+        key="btn_gen_pdf_mr",
+        help="Genera un PDF con numeralia y visualizaciones de esta UC o Adscripción",
+    ):
+        with st.spinner("Generando PDF con visualizaciones\u2026 puede tardar unos segundos \u23f3"):
+            try:
+                from fpdf import FPDF as _FPDF_MR
+                import io as _io_mr
+
+                _pdf_obj = _FPDF_MR(orientation="L", unit="mm", format="A4")
+                _pdf_obj.set_auto_page_break(auto=True, margin=12)
+                _pdf_obj.set_margins(12, 12, 12)
+                _pdf_obj.add_page()
+
+                # ── Header ──
+                _pdf_obj.set_font("Helvetica", "B", 15)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(
+                    0, 10,
+                    f"Perfil UC \u2014 {str(_label_mr)[:75]}",
+                    new_x="LMARGIN", new_y="NEXT",
+                )
+                _pdf_obj.set_font("Helvetica", "", 9)
+                _pdf_obj.set_text_color(23, 27, 25)
+                if _tipo_vista_mr == "UC espec\u00edfica":
+                    _pdf_meta_str = f"Tipo UC: {_meta_tipo_mr}   |   Adscripci\u00f3n: {_meta_adsc_mr}"
+                else:
+                    _pdf_meta_str = f"Adscripci\u00f3n: {_meta_adsc_mr}"
+                _pdf_obj.cell(0, 6, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.ln(3)
+
+                # ── KPIs ──
+                _pdf_obj.set_font("Helvetica", "B", 11)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 7, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.set_text_color(23, 27, 25)
+                _monto_pdf_str = (
+                    f"${_monto_mr/1e9:,.2f} miles de millones MXN"
+                    if _monto_mr >= 1e9
+                    else f"${_monto_mr/1e6:,.1f} M MXN"
+                )
+                _kpi_labels_pdf = [
+                    "Contratos", "Monto total",
+                    "Proveedores \u00fanicos", "% Monto LP", "% Monto AD",
+                ]
+                _kpi_values_pdf = [
+                    f"{_total_mr:,}", _monto_pdf_str,
+                    f"{_n_prov_mr:,}", f"{_pct_lp_mr:.1f}%", f"{_pct_ad_mr:.1f}%",
+                ]
+                _cw_pdf = _pdf_obj.epw / 5
+                for _lbl in _kpi_labels_pdf:
+                    _pdf_obj.set_font("Helvetica", "B", 8)
+                    _pdf_obj.cell(_cw_pdf, 5, _lbl)
+                _pdf_obj.ln(5)
+                for _val in _kpi_values_pdf:
+                    _pdf_obj.set_font("Helvetica", "", 10)
+                    _pdf_obj.cell(_cw_pdf, 6, _val)
+                _pdf_obj.ln(10)
+
+                # ── Charts ──
+                _charts_export = [
+                    ("Distribuci\u00f3n por Tipo de Procedimiento (contratos)", _fig_pA1),
+                    ("Distribuci\u00f3n por Tipo de Procedimiento (monto)", _fig_pA2),
+                    ("Proveedores por Monto Contratado", _fig_pB),
+                    ("Gasto por Partida Presupuestaria (CUCoP)", _fig_pC),
+                    ("Distribuci\u00f3n de Proveedores en la UC (HHI)", _fig_donut_mr),
+                ]
+                for _chart_title, _chart_fig in _charts_export:
+                    if _chart_fig is None:
+                        continue
+                    try:
+                        _img_bytes = _chart_fig.to_image(
+                            format="png", width=1100, height=440, scale=1.5
+                        )
+                        _pdf_obj.set_font("Helvetica", "B", 10)
+                        _pdf_obj.set_text_color(11, 84, 69)
+                        _pdf_obj.cell(
+                            0, 6, _chart_title,
+                            new_x="LMARGIN", new_y="NEXT",
+                        )
+                        _pdf_obj.image(_io_mr.BytesIO(_img_bytes), w=_pdf_obj.epw)
+                        _pdf_obj.ln(4)
+                    except Exception:
+                        pass
+
+                # ── Footer ──
+                _pdf_obj.set_font("Helvetica", "I", 8)
+                _pdf_obj.set_text_color(134, 134, 136)
+                _pdf_obj.cell(
+                    0, 5,
+                    "Divisi\u00f3n de Monitoreo de la Integridad Institucional \u2013 IMSS | ComprasMX 2026",
+                    align="C",
+                )
+
+                st.session_state[_pdf_state_key] = bytes(_pdf_obj.output())
+            except ImportError:
+                st.error(
+                    "\u26a0\ufe0f kaleido no instalado. "
+                    "Ejecutar: `pip install kaleido` y reiniciar el servidor."
+                )
+            except Exception as _e_pdf:
+                st.error(f"\u26a0\ufe0f Error generando PDF: {_e_pdf}")
+
+    if st.session_state.get(_pdf_state_key):
+        _c_pdf2.download_button(
+            "\u2b07\ufe0f Descargar PDF del Perfil UC",
+            data=st.session_state[_pdf_state_key],
+            file_name=f"perfil_uc_{str(_label_mr).replace(' ', '_')[:30]}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key="btn_dl_pdf_mr",
+        )
 
     st.divider()
 
