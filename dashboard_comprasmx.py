@@ -6947,8 +6947,8 @@ def pagina_expediente():
                     _df_san6_sc = cargar_sancionados()
                     _san6_sc = _df_san6_sc[_df_san6_sc["RFC"].str.strip() == _rfc_c6]
                     if len(_san6_sc) > 0:
-                        _ff6_sc = pd.to_datetime(_c.get("Fecha de fallo"), format="%d/%m/%Y", errors="coerce")
-                        _fm6_sc = pd.to_datetime(_c.get("Fecha de firma del contrato"), format="%d/%m/%Y", errors="coerce")
+                        _ff6_sc = pd.to_datetime(_c.get("Fecha de fallo"), dayfirst=True, errors="coerce")
+                        _fm6_sc = pd.to_datetime(_c.get("Fecha de firma del contrato"), dayfirst=True, errors="coerce")
                         _fr6_sc = _ff6_sc if not pd.isna(_ff6_sc) else _fm6_sc
                         # Evaluar TODOS los registros del RFC (no solo el primero)
                         _sc6 = _sa6 = _sm6 = False
@@ -7089,12 +7089,21 @@ def pagina_expediente():
                     _df_san6 = cargar_sancionados()
                     _san6    = _df_san6[_df_san6["RFC"].str.strip() == _rfc_c6]
                     if len(_san6) > 0:
-                        _niv_san6 = _san6.iloc[0]["Nivel de Riesgo"]
-                        _ini_san6 = _san6.iloc[0]["Inicio inhabilitación"]
+                        # Usar el registro de MAYOR severidad (no solo el primero)
+                        _NIVO_RANK = {"crítico": 3, "alto": 2, "medio": 1}
+                        _best_san6 = _san6.iloc[0]
+                        for _, _r6x in _san6.iterrows():
+                            _nl_new = str(_r6x.get("Nivel de Riesgo", "")).lower()
+                            _nl_best = str(_best_san6.get("Nivel de Riesgo", "")).lower()
+                            if (max((_NIVO_RANK.get(k, 0) for k in _NIVO_RANK if k in _nl_new), default=0)
+                                    > max((_NIVO_RANK.get(k, 0) for k in _NIVO_RANK if k in _nl_best), default=0)):
+                                _best_san6 = _r6x
+                        _niv_san6 = str(_best_san6.get("Nivel de Riesgo", ""))
+                        _ini_san6 = _best_san6.get("Inicio inhabilitación", "")
                         if "crítico" in _niv_san6.lower():
                             # Fecha de referencia: fallo si existe, firma si no (AD no genera fallo)
-                            _ff_c6   = pd.to_datetime(_c.get("Fecha de fallo"), format="%d/%m/%Y", errors="coerce")
-                            _fm_c6   = pd.to_datetime(_c.get("Fecha de firma del contrato"), format="%d/%m/%Y", errors="coerce")
+                            _ff_c6   = pd.to_datetime(_c.get("Fecha de fallo"), dayfirst=True, errors="coerce")
+                            _fm_c6   = pd.to_datetime(_c.get("Fecha de firma del contrato"), dayfirst=True, errors="coerce")
                             _fref_c6 = _ff_c6 if not pd.isna(_ff_c6) else _fm_c6
                             _ini_dt  = pd.to_datetime(_ini_san6, errors="coerce")
                             if pd.isna(_fref_c6):
@@ -8838,16 +8847,18 @@ def pagina_ranking_riesgo():
         # ── 2. Flags vectorizados ──────────────────────────────
         _rfc_n_rk = _dff_rk["rfc"].astype(str).str.strip().str.upper()
 
+        # dayfirst=True sin format= para manejar tanto DD/MM/YYYY (2026)
+        # como ISO datetime (2025: "2025-10-09 00:00:00")
         _fecha_fallo_rk = pd.to_datetime(
             _dff_rk["Fecha de fallo"] if "Fecha de fallo" in _dff_rk.columns
             else pd.Series(pd.NaT, index=_dff_rk.index),
-            format="%d/%m/%Y", errors="coerce",
+            dayfirst=True, errors="coerce",
         )
         _fecha_firma_rk = pd.to_datetime(
             _dff_rk["Fecha de firma del contrato"]
             if "Fecha de firma del contrato" in _dff_rk.columns
             else pd.Series(pd.NaT, index=_dff_rk.index),
-            format="%d/%m/%Y", errors="coerce",
+            dayfirst=True, errors="coerce",
         )
         _fecha_ref_rk = _fecha_fallo_rk.combine_first(_fecha_firma_rk)
 
@@ -8984,7 +8995,7 @@ def pagina_ranking_riesgo():
 
         _fecha_rfc_rk = _dff_rk["rfc"].map(_parse_rfc_rk)
         _fecha_ini_rk = pd.to_datetime(
-            _dff_rk["Fecha de inicio del contrato"], format="%d/%m/%Y", errors="coerce"
+            _dff_rk["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
         ).dt.date
 
         _edad_rk = pd.Series([
