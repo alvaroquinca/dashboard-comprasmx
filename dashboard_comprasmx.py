@@ -694,6 +694,61 @@ def pagina_descripcion():
 
     st.divider()
 
+    # ── SECCIÓN 2b: DISTRIBUCIÓN POR TIPO DE UC ──
+    st.subheader("🗺️  Distribución del Gasto por Tipo de UC")
+    with st.expander("ℹ️ Metodología y contexto", expanded=False):
+        st.markdown("""
+            Desglosa el gasto total por tipo de Unidad Compradora: **OOAD** (Delegaciones Regionales),
+            **UMAE** (Unidades de Alta Especialidad) y **Nivel Central**. Para el Nivel Central,
+            se distingue entre el gasto correspondiente a **compras consolidadas** (adquisiciones
+            coordinadas a nivel APF) y el gasto **no consolidado** de esa Unidad Compradora.
+        """)
+    _tj_df = dff[["Clave de la UC", "Importe DRC", "Compra consolidada"]].merge(
+        df_dir_uc[["Clave_UC", "Tipo UC"]],
+        left_on="Clave de la UC", right_on="Clave_UC", how="left"
+    )
+    _tj_df["Tipo UC"] = _tj_df["Tipo UC"].fillna("Sin clasificar")
+    def _cat_uc_tj(row):
+        t = row["Tipo UC"]
+        if t == "Nivel Central":
+            return ("Nivel Central — Consolidada"
+                    if str(row["Compra consolidada"]).strip().upper() == "SI"
+                    else "Nivel Central — No consolidada")
+        return t
+    _tj_df["Cat_uc"] = _tj_df.apply(_cat_uc_tj, axis=1)
+    _agg_tj = _tj_df.groupby("Cat_uc")["Importe DRC"].sum().reset_index()
+    _total_tj = _agg_tj["Importe DRC"].sum()
+    _agg_tj["Pct"] = (_agg_tj["Importe DRC"] / _total_tj * 100).fillna(0) if _total_tj > 0 else 0
+    _agg_tj["Monto_fmt"] = _agg_tj["Importe DRC"].apply(lambda x: f"${x/1e6:,.1f} M")
+    _agg_tj["Pct_fmt"]   = _agg_tj["Pct"].apply(lambda x: f"{x:.1f}%")
+    _colores_cat_uc = {
+        "OOAD":                             IMSS_VERDE,
+        "UMAE":                             IMSS_ROJO,
+        "Nivel Central — No consolidada":    IMSS_ORO,
+        "Nivel Central — Consolidada":       IMSS_ORO_CLARO,
+        "Sin clasificar":                   IMSS_GRIS,
+    }
+    fig_tj = px.treemap(
+        _agg_tj, path=["Cat_uc"], values="Importe DRC",
+        color="Cat_uc", color_discrete_map=_colores_cat_uc,
+        custom_data=["Monto_fmt", "Pct_fmt"],
+    )
+    fig_tj.update_traces(
+        texttemplate="<b>%{label}</b><br>%{customdata[1]}<br>%{customdata[0]}",
+        hovertemplate=(
+            "<b>%{label}</b><br>Monto: %{customdata[0]}<br>"
+            "% del total: %{customdata[1]}<extra></extra>"
+        ),
+        textfont=dict(family="Noto Sans, sans-serif", size=13),
+    )
+    fig_tj.update_layout(
+        font=plotly_font(), height=400,
+        margin=dict(l=10, r=10, t=20, b=10),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_tj, use_container_width=True)
+    st.divider()
+
     # ── SECCIÓN 3: ANÁLISIS POR PARTIDA PRESUPUESTARIA (CUCOP) ──
     st.subheader("3️⃣ Gasto por Partida Presupuestaria (CUCoP)")
     with st.expander("ℹ️ Metodología y contexto", expanded=False):
@@ -4961,23 +5016,25 @@ def pagina_mapa_riesgo():
 
     _col_pA1, _col_pA2 = st.columns(2)
     with _col_pA1:
-        _dist_num_mr = (
-            _dff_sel["Tipo Simplificado"]
-            .replace(_TIPO_RENAME_MR)
-            .value_counts()
+        _dist_both_mr = (
+            _dff_sel.copy()
+            .assign(Tipo=lambda d: d["Tipo Simplificado"].replace(_TIPO_RENAME_MR))
+            .groupby("Tipo")
+            .agg(Contratos=("Importe DRC", "count"), Monto=("Importe DRC", "sum"))
             .reset_index()
         )
-        _dist_num_mr.columns = ["Tipo", "Contratos"]
+        _dist_both_mr["Monto_fmt"] = _dist_both_mr["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
         _fig_pA1 = px.pie(
-            _dist_num_mr, names="Tipo", values="Contratos",
+            _dist_both_mr, names="Tipo", values="Contratos",
             color="Tipo", color_discrete_map=COLORES_TIPO,
             title="Por número de contratos", hole=0.35,
+            custom_data=["Monto_fmt"],
         )
         _fig_pA1.update_traces(
             textinfo="percent", textposition="inside",
             insidetextorientation="horizontal",
             textfont=dict(family="Noto Sans, sans-serif", size=13),
-            hovertemplate="<b>%{label}</b><br>Contratos: %{value:,}<br>%{percent}<extra></extra>",
+            hovertemplate="<b>%{label}</b><br>Contratos: %{value:,}<br>Monto: %{customdata[0]}<br>%{percent}<extra></extra>",
         )
         _fig_pA1.update_layout(
             font=plotly_font(), title_font_color=IMSS_VERDE_OSC,
@@ -4995,15 +5052,17 @@ def pagina_mapa_riesgo():
             .sum().reset_index()
         )
         _dist_monto_mr.columns = ["Tipo", "Monto"]
+        _dist_monto_mr["Monto_fmt"] = _dist_monto_mr["Monto"].apply(lambda x: f"${x/1e6:,.1f} M")
         _fig_pA2 = px.pie(
             _dist_monto_mr, names="Tipo", values="Monto",
             color="Tipo", color_discrete_map=COLORES_TIPO,
             title="Por monto total", hole=0.35,
+            custom_data=["Monto_fmt"],
         )
         _fig_pA2.update_traces(
-            textinfo="percent", textposition="inside",
-            insidetextorientation="horizontal",
-            textfont=dict(family="Noto Sans, sans-serif", size=13),
+            texttemplate="<b>%{percent:.1%}</b><br>%{customdata[0]}",
+            textposition="outside",
+            textfont=dict(family="Noto Sans, sans-serif", size=12),
             hovertemplate="<b>%{label}</b><br>Monto: $%{value:,.0f}<br>%{percent}<extra></extra>",
         )
         _fig_pA2.update_layout(
@@ -5032,6 +5091,7 @@ def pagina_mapa_riesgo():
         lambda s: str(s)[:48] + "…" if len(str(s)) > 48 else str(s)
     )
     _prov_mr = _prov_mr.sort_values("Importe DRC", ascending=True)
+    _prov_mr["Monto_fmt"] = _prov_mr["Importe DRC"].apply(lambda x: f"${x/1e6:,.1f} M")
 
     _fig_pB = px.treemap(
         _prov_mr,
@@ -5040,15 +5100,15 @@ def pagina_mapa_riesgo():
         color="Share_mr",
         color_continuous_scale=[[0, IMSS_VERDE_OSC], [0.5, IMSS_VERDE], [1, IMSS_ORO_CLARO]],
         range_color=[0, 100],
-        custom_data=["Proveedor o contratista", "rfc", "Share_fmt"],
+        custom_data=["Proveedor o contratista", "rfc", "Share_fmt", "Monto_fmt"],
     )
     _fig_pB.update_traces(
-        texttemplate="<b>%{label}</b><br>%{customdata[2]}",
+        texttemplate="<b>%{label}</b><br>%{customdata[3]}<br>%{customdata[2]}",
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "RFC: %{customdata[1]}<br>"
             "% de la UC: %{customdata[2]}<br>"
-            "Monto: $%{value:,.0f}<extra></extra>"
+            "Monto: %{customdata[3]}<extra></extra>"
         ),
         textfont=dict(family="Noto Sans, sans-serif", size=12),
     )
@@ -5223,119 +5283,6 @@ def pagina_mapa_riesgo():
     # ─────────────────────────────────────────────────────────────────────
     # PDF generation (triggered by flag set at top of section)
     # ─────────────────────────────────────────────────────────────────────
-    if st.session_state.get(_pdf_flag_key):
-        with st.spinner("Generando PDF con visualizaciones\u2026 \u23f3"):
-            try:
-                from fpdf import FPDF as _FPDF_MR
-                import io as _io_mr
-
-                def _s(text):
-                    """Sanitize string for fpdf Helvetica (latin-1 safe)."""
-                    t = str(text)
-                    t = (t.replace('\u2014', '--').replace('\u2013', '-')
-                          .replace('\u2026', '...').replace('\u201c', '"')
-                          .replace('\u201d', '"')
-                          .replace('\u2018', "'")
-                          .replace('\u2019', "'"))
-                    return t.encode('latin-1', errors='replace').decode('latin-1')
-
-                _pdf_obj = _FPDF_MR(orientation="L", unit="mm", format="A4")
-                _pdf_obj.set_auto_page_break(auto=True, margin=12)
-                _pdf_obj.set_margins(12, 12, 12)
-                _pdf_obj.add_page()
-
-                # ── Header ──
-                _pdf_obj.set_font("Helvetica", "B", 15)
-                _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(
-                    0, 10, _s(f"Perfil UC -- {str(_label_mr)[:75]}"),
-                    new_x="LMARGIN", new_y="NEXT",
-                )
-                _pdf_obj.set_font("Helvetica", "", 9)
-                _pdf_obj.set_text_color(23, 27, 25)
-                if _tipo_vista_mr == "UC espec\u00edfica":
-                    _pdf_meta_str = _s(
-                        f"Tipo UC: {_meta_tipo_mr or '--'}   |   "
-                        f"Adscripcion: {_meta_adsc_mr or '--'}"
-                    )
-                else:
-                    _pdf_meta_str = _s(f"Adscripcion: {_meta_adsc_mr}")
-                _pdf_obj.cell(0, 6, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.ln(3)
-
-                # ── KPIs ──
-                _pdf_obj.set_font("Helvetica", "B", 11)
-                _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 7, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.set_text_color(23, 27, 25)
-                _monto_pdf_str = (
-                    f"${_monto_mr/1e9:,.2f} miles de millones MXN"
-                    if _monto_mr >= 1e9
-                    else f"${_monto_mr/1e6:,.1f} M MXN"
-                )
-                _kpi_labels_pdf = [
-                    "Contratos", "Monto total",
-                    "Proveedores unicos", "% Monto LP", "% Monto AD",
-                ]
-                _kpi_values_pdf = [
-                    f"{_total_mr:,}", _monto_pdf_str,
-                    f"{_n_prov_mr:,}", f"{_pct_lp_mr:.1f}%", f"{_pct_ad_mr:.1f}%",
-                ]
-                _cw_pdf = _pdf_obj.epw / 5
-                for _lbl in _kpi_labels_pdf:
-                    _pdf_obj.set_font("Helvetica", "B", 8)
-                    _pdf_obj.cell(_cw_pdf, 5, _s(_lbl))
-                _pdf_obj.ln(5)
-                for _val in _kpi_values_pdf:
-                    _pdf_obj.set_font("Helvetica", "", 10)
-                    _pdf_obj.cell(_cw_pdf, 6, _s(_val))
-                _pdf_obj.ln(10)
-
-                # ── Charts ──
-                _charts_export = [
-                    ("Distribucion por Tipo de Procedimiento (contratos)", _fig_pA1),
-                    ("Distribucion por Tipo de Procedimiento (monto)", _fig_pA2),
-                    ("Proveedores por Monto Contratado", _fig_pB),
-                    ("Gasto por Partida Presupuestaria (CUCoP)", _fig_pC),
-                    ("Distribucion de Proveedores en la UC (HHI)", _fig_donut_mr),
-                ]
-                for _chart_title, _chart_fig in _charts_export:
-                    if _chart_fig is None:
-                        continue
-                    try:
-                        _img_bytes = _chart_fig.to_image(
-                            format="png", width=1100, height=440, scale=1.5
-                        )
-                        _pdf_obj.set_font("Helvetica", "B", 10)
-                        _pdf_obj.set_text_color(11, 84, 69)
-                        _pdf_obj.cell(
-                            0, 6, _s(_chart_title),
-                            new_x="LMARGIN", new_y="NEXT",
-                        )
-                        _pdf_obj.image(_io_mr.BytesIO(_img_bytes), w=_pdf_obj.epw)
-                        _pdf_obj.ln(4)
-                    except Exception:
-                        pass
-
-                # ── Footer ──
-                _pdf_obj.set_font("Helvetica", "I", 8)
-                _pdf_obj.set_text_color(134, 134, 136)
-                _pdf_obj.cell(
-                    0, 5,
-                    _s("Division de Monitoreo de la Integridad Institucional -- IMSS | ComprasMX 2026"),
-                    align="C",
-                )
-
-                st.session_state[_pdf_state_key] = bytes(_pdf_obj.output())
-            except Exception as _e_pdf:
-                st.error(f"\u26a0\ufe0f Error generando PDF: {_e_pdf}")
-        st.session_state[_pdf_flag_key] = False
-        st.rerun()
-
-    st.divider()
-
-    st.subheader("\U0001f6a8 Riesgos espec\u00edficos detectados")
-
     _rfc_norm_mr    = _dff_sel["rfc"].astype(str).str.strip().str.upper()
     _riesgos_activos = []  # list of (tipo_str, data)
     _riesgos_limpios = []  # list of label strings
@@ -5490,19 +5437,36 @@ def pagina_mapa_riesgo():
     )
     _dff_ad_fr = _dff_ad_fr[_dff_ad_fr["_f_fr"].notna()].copy()
     _dff_ad_fr["_fstr_fr"] = _dff_ad_fr["_f_fr"].dt.date.astype(str)
+    # Excluir contratos que comparten número de procedimiento (mismas partidas, no fragmentación)
+    _col_proc_fr = "Número de procedimiento"
+    if _col_proc_fr in _dff_ad_fr.columns:
+        _proc_vals_fr   = _dff_ad_fr[_col_proc_fr].astype(str).str.strip()
+        _proc_counts_fr = _proc_vals_fr.value_counts()
+        _procs_rep_fr   = set(_proc_counts_fr[_proc_counts_fr >= 2].index) - {"", "nan", "NaN"}
+        if _procs_rep_fr:
+            _dff_ad_fr = _dff_ad_fr[~_proc_vals_fr.isin(_procs_rep_fr)].copy()
     if len(_dff_ad_fr) > 0:
+        _has_proc_col_fr = _col_proc_fr in _dff_ad_fr.columns
+        _agg_spec_fr = {
+            "Contratos":   ("Importe DRC", "count"),
+            "Monto_total": ("Importe DRC", "sum"),
+            "Monto_min":   ("Importe DRC", "min"),
+            "Monto_max":   ("Importe DRC", "max"),
+        }
+        if _has_proc_col_fr:
+            _agg_spec_fr["Procs_distintos"] = (_col_proc_fr, "nunique")
         _g_fr = (
             _dff_ad_fr.groupby(["rfc", "Proveedor o contratista", "Nombre de la UC", "_fstr_fr"])
-            .agg(
-                Contratos=("Importe DRC", "count"),
-                Monto_total=("Importe DRC", "sum"),
-                Monto_min=("Importe DRC", "min"),
-                Monto_max=("Importe DRC", "max"),
-            ).reset_index()
+            .agg(**_agg_spec_fr)
+            .reset_index()
         )
-        _g_fr = _g_fr[_g_fr["Contratos"] >= 3].sort_values("Contratos", ascending=False)
+        _mask_frag_fr = _g_fr["Contratos"] >= 3
+        if _has_proc_col_fr and "Procs_distintos" in _g_fr.columns:
+            _mask_frag_fr = _mask_frag_fr & (_g_fr["Procs_distintos"] >= 2)
+        _g_fr = _g_fr[_mask_frag_fr].sort_values("Contratos", ascending=False)
         if len(_g_fr) > 0:
-            _riesgos_activos.append(("frag_dia", _g_fr))
+            # Guardar también _dff_ad_fr para poder mostrar contratos individuales con links
+            _riesgos_activos.append(("frag_dia", (_g_fr, _dff_ad_fr)))
         else:
             _riesgos_limpios.append("Fragmentaci\u00f3n (mismo d\u00eda)")
     else:
@@ -5541,6 +5505,157 @@ def pagina_mapa_riesgo():
             _riesgos_limpios.append(f"Excepci\u00f3n Art. 55 ({_pct_exc_mr:.1f}% < 30%)")
     else:
         _riesgos_limpios.append("Excepci\u00f3n Art. 55")
+
+    if st.session_state.get(_pdf_flag_key):
+        with st.spinner("Generando PDF con visualizaciones\u2026 \u23f3"):
+            try:
+                from fpdf import FPDF as _FPDF_MR
+                import io as _io_mr
+
+                def _s(text):
+                    """Sanitize string for fpdf Helvetica (latin-1 safe)."""
+                    t = str(text)
+                    t = (t.replace('\u2014', '--').replace('\u2013', '-')
+                          .replace('\u2026', '...').replace('\u201c', '"')
+                          .replace('\u201d', '"')
+                          .replace('\u2018', "'")
+                          .replace('\u2019', "'"))
+                    return t.encode('latin-1', errors='replace').decode('latin-1')
+
+                _pdf_obj = _FPDF_MR(orientation="L", unit="mm", format="A4")
+                _pdf_obj.set_auto_page_break(auto=True, margin=12)
+                _pdf_obj.set_margins(12, 12, 12)
+                _pdf_obj.add_page()
+
+                # ── Header ──
+                _pdf_obj.set_font("Helvetica", "B", 15)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(
+                    0, 10, _s(f"Perfil UC -- {str(_label_mr)[:75]}"),
+                    new_x="LMARGIN", new_y="NEXT",
+                )
+                _pdf_obj.set_font("Helvetica", "", 9)
+                _pdf_obj.set_text_color(23, 27, 25)
+                if _tipo_vista_mr == "UC espec\u00edfica":
+                    _pdf_meta_str = _s(
+                        f"Tipo UC: {_meta_tipo_mr or '--'}   |   "
+                        f"Adscripcion: {_meta_adsc_mr or '--'}"
+                    )
+                else:
+                    _pdf_meta_str = _s(f"Adscripcion: {_meta_adsc_mr}")
+                _pdf_obj.cell(0, 6, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.ln(3)
+
+                # ── KPIs ──
+                _pdf_obj.set_font("Helvetica", "B", 11)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 7, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.set_text_color(23, 27, 25)
+                _monto_pdf_str = (
+                    f"${_monto_mr/1e9:,.2f} miles de millones MXN"
+                    if _monto_mr >= 1e9
+                    else f"${_monto_mr/1e6:,.1f} M MXN"
+                )
+                _kpi_labels_pdf = [
+                    "Contratos", "Monto total",
+                    "Proveedores unicos", "% Monto LP", "% Monto AD",
+                ]
+                _kpi_values_pdf = [
+                    f"{_total_mr:,}", _monto_pdf_str,
+                    f"{_n_prov_mr:,}", f"{_pct_lp_mr:.1f}%", f"{_pct_ad_mr:.1f}%",
+                ]
+                _cw_pdf = _pdf_obj.epw / 5
+                for _lbl in _kpi_labels_pdf:
+                    _pdf_obj.set_font("Helvetica", "B", 8)
+                    _pdf_obj.cell(_cw_pdf, 5, _s(_lbl))
+                _pdf_obj.ln(5)
+                for _val in _kpi_values_pdf:
+                    _pdf_obj.set_font("Helvetica", "", 10)
+                    _pdf_obj.cell(_cw_pdf, 6, _s(_val))
+                _pdf_obj.ln(10)
+
+                _pdf_obj.ln(4)
+
+                # ── Riesgos detectados en el PDF ──
+                _pdf_obj.set_font("Helvetica", "B", 11)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 7, _s("Riesgos especificos detectados"), new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.set_text_color(23, 27, 25)
+                if not _riesgos_activos:
+                    _pdf_obj.set_font("Helvetica", "", 9)
+                    _pdf_obj.cell(0, 6, _s("Sin alertas de riesgo detectadas."), new_x="LMARGIN", new_y="NEXT")
+                else:
+                    _RISK_LABELS_PDF = {
+                        "san":       "Proveedores sancionados (SABG)",
+                        "efos_def":  "EFOS definitivo (Art. 69-B CFF)",
+                        "efos_pre":  "EFOS presunto (Art. 69-B CFF)",
+                        "reciente":  "Empresa de reciente creacion",
+                        "umbral":    "Contratos cerca del umbral legal",
+                        "frag_dia":  "Fragmentacion -- mismo dia",
+                        "brecha_lp": "Baja proporcion de LP",
+                        "conc_ad":   "Alta concentracion en AD",
+                        "exc_alto":  "Excepcion Art. 55 (>30%)",
+                    }
+                    for _tr_p, _dr_p in _riesgos_activos:
+                        _lbl_p = _RISK_LABELS_PDF.get(_tr_p, _tr_p)
+                        if isinstance(_dr_p, tuple):
+                            _g_p = _dr_p[0]
+                            _line_p = f"  * {_lbl_p}: {len(_g_p)} grupo(s)"
+                        elif isinstance(_dr_p, pd.DataFrame):
+                            _m_p = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _line_p = f"  * {_lbl_p}: {len(_dr_p)} contrato(s), ${_m_p/1e6:,.1f} M MXN"
+                        elif isinstance(_dr_p, (int, float)):
+                            _line_p = f"  * {_lbl_p}: {_dr_p:.1f}%"
+                        else:
+                            _line_p = f"  * {_lbl_p}"
+                        _pdf_obj.set_font("Helvetica", "", 9)
+                        _pdf_obj.cell(0, 5, _s(_line_p), new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.ln(4)
+
+                # ── Charts ──
+                _charts_export = [
+                    ("Distribucion por Tipo de Procedimiento (contratos)", _fig_pA1),
+                    ("Distribucion por Tipo de Procedimiento (monto)", _fig_pA2),
+                    ("Proveedores por Monto Contratado", _fig_pB),
+                    ("Gasto por Partida Presupuestaria (CUCoP)", _fig_pC),
+                    ("Distribucion de Proveedores en la UC (HHI)", _fig_donut_mr),
+                ]
+                for _chart_title, _chart_fig in _charts_export:
+                    if _chart_fig is None:
+                        continue
+                    try:
+                        _img_bytes = _chart_fig.to_image(
+                            format="png", width=1100, height=440, scale=1.5
+                        )
+                        _pdf_obj.set_font("Helvetica", "B", 10)
+                        _pdf_obj.set_text_color(11, 84, 69)
+                        _pdf_obj.cell(
+                            0, 6, _s(_chart_title),
+                            new_x="LMARGIN", new_y="NEXT",
+                        )
+                        _pdf_obj.image(_io_mr.BytesIO(_img_bytes), w=_pdf_obj.epw)
+                        _pdf_obj.ln(4)
+                    except Exception:
+                        pass
+
+                # ── Footer ──
+                _pdf_obj.set_font("Helvetica", "I", 8)
+                _pdf_obj.set_text_color(134, 134, 136)
+                _pdf_obj.cell(
+                    0, 5,
+                    _s("Division de Monitoreo de la Integridad Institucional -- IMSS | ComprasMX 2026"),
+                    align="C",
+                )
+
+                st.session_state[_pdf_state_key] = bytes(_pdf_obj.output())
+            except Exception as _e_pdf:
+                st.error(f"\u26a0\ufe0f Error generando PDF: {_e_pdf}")
+        st.session_state[_pdf_flag_key] = False
+        st.rerun()
+
+    st.divider()
+
+    st.subheader("\U0001f6a8 Riesgos espec\u00edficos detectados")
 
     # \u2500\u2500 Banner resumen \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     _n_act = len(_riesgos_activos)
@@ -5716,14 +5831,15 @@ def pagina_mapa_riesgo():
                 })
 
         elif _tr == "frag_dia":
+            _g_fr_d, _dff_ad_fr_d = _dr  # desempacar (grupos, contratos_individuales)
             with st.expander(
-                f"\U0001f9e9 Fragmentaci\u00f3n \u2014 concentraci\u00f3n en el mismo d\u00eda \u2014 {len(_dr)} grupo(s)"
+                f"\U0001f9e9 Fragmentaci\u00f3n \u2014 concentraci\u00f3n en el mismo d\u00eda \u2014 {len(_g_fr_d)} grupo(s)"
             ):
                 st.warning(
                     "El mismo proveedor recibi\u00f3 **3 o m\u00e1s contratos** de adjudicaci\u00f3n directa "
                     "en la misma fecha \u2014 patr\u00f3n cl\u00e1sico de fragmentaci\u00f3n simult\u00e1nea."
                 )
-                _disp_fd = _dr.rename(columns={
+                _disp_fd = _g_fr_d.rename(columns={
                     "_fstr_fr": "Fecha",
                     "Proveedor o contratista": "Proveedor",
                     "Contratos": "# Contratos",
@@ -5742,6 +5858,34 @@ def pagina_mapa_riesgo():
                 ] if c in _disp_fd.columns]]
                 _disp_fd.index = range(1, len(_disp_fd) + 1)
                 st.dataframe(_disp_fd, use_container_width=True)
+                # Contratos individuales con links a ComprasMX
+                st.markdown("**Contratos individuales:**")
+                _cols_frd = ["rfc", "Nombre de la UC", "_fstr_fr"]
+                _det_fr_d = _dff_ad_fr_d.merge(
+                    _g_fr_d[_cols_frd], on=_cols_frd, how="inner"
+                )
+                _cols_det_fr = [c for c in [
+                    "Fecha de inicio del contrato", "Nombre de la UC",
+                    "Proveedor o contratista", "N\u00famero de procedimiento",
+                    "Importe DRC", "Direcci\u00f3n del anuncio"
+                ] if c in _det_fr_d.columns]
+                _det_fr_d = _det_fr_d[_cols_det_fr].drop_duplicates().sort_values(
+                    ["Nombre de la UC", "Proveedor o contratista",
+                     "Fecha de inicio del contrato"]
+                )
+                _det_fr_d["Importe"] = pd.to_numeric(
+                    _det_fr_d["Importe DRC"], errors="coerce"
+                ).apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "")
+                _det_fr_d = _det_fr_d.drop(columns=["Importe DRC"], errors="ignore")
+                _det_fr_d.index = range(1, len(_det_fr_d) + 1)
+                st.dataframe(
+                    _det_fr_d, use_container_width=True,
+                    column_config={
+                        "Direcci\u00f3n del anuncio": st.column_config.LinkColumn(
+                            "\U0001f517 ComprasMX", display_text="Ver contrato"
+                        )
+                    },
+                )
 
         elif _tr == "brecha_lp":
             with st.expander(
