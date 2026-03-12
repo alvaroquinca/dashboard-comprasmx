@@ -1008,13 +1008,13 @@ def pagina_descripcion():
         "🏭 Mipyme — % del monto AD",
         f"{pct_mipyme_ad:.1f}%",
         delta=f"{pct_mipyme_ad - 50:.1f} pp vs objetivo 50%",
-        delta_color="normal" if pct_mipyme_ad >= 50 else "inverse"
+        delta_color="normal",   # verde si ≥0 (cumple), rojo si <0 (incumple)
     )
     _m3.metric(
         "🤝 Cooperativas — % del monto AD",
         f"{pct_coop_ad:.1f}%",
         delta=f"{pct_coop_of_mipyme - 25:.1f} pp (coop/mipyme vs 25%)",
-        delta_color="normal" if pct_coop_of_mipyme >= 25 else "inverse"
+        delta_color="normal",   # verde si ≥0 (cumple), rojo si <0 (incumple)
     )
     _m4.metric("📋 Contratos a Mipymes", f"{len(_dff_ad_mipyme):,}")
 
@@ -8034,8 +8034,16 @@ def pagina_colusion():
             _total_w = sum(d["weight"] for _, _, d in _subg.edges(data=True))
             _n_cont_c = int(_dff_c["Proveedor o contratista"].isin(_members).sum())
             _monto_c  = _dff_c.loc[_dff_c["Proveedor o contratista"].isin(_members), "Importe DRC"].sum()
+            # Nombre descriptivo: empresa con más contratos en la comunidad
+            _cnt_by_m = {
+                m: int(_dff_c["Proveedor o contratista"].eq(m).sum())
+                for m in _members
+            }
+            _top_m = max(_cnt_by_m, key=_cnt_by_m.get)
+            _nombre_c = (_top_m[:28] + "…") if len(_top_m) > 28 else _top_m
             _comm_data.append({
                 "Comunidad": f"C-{_cid:03d}",
+                "Nombre": _nombre_c,
                 "N° proveedores": len(_members),
                 "Densidad interna": round(_density, 4),
                 "Procs. compartidos": _total_w,
@@ -8065,11 +8073,15 @@ def pagina_colusion():
     with _tab0:
         st.subheader("🕸️ Grafo Interactivo — Red de Co-aparición")
         st.caption(
-            "Cada **nodo** es un proveedor; cada **arista** representa procedimientos "
-            "compartidos (grosor = número de procedimientos). "
-            "El **color** indica la comunidad Louvain. "
-            "El **tamaño** es proporcional al número de conexiones. "
-            "Arrastra, zoom y haz hover para explorar la red."
+            "Cada **punto (nodo)** es un proveedor. Cada **línea (arista)** conecta dos "
+            "proveedores que coincidieron en el mismo procedimiento de contratación; "
+            "a mayor grosor, más procedimientos en común. "
+            "El **color** agrupa a los proveedores en comunidades detectadas. "
+            "Arrastra, haz zoom y pasa el cursor para explorar."
+        )
+        st.info(
+            "💡 **Consejo:** Activa *Solo grupos sospechosos* para enfocarte en los "
+            "proveedores que más se repiten juntos y representan mayor riesgo de colusión."
         )
 
         # ── Controles ──────────────────────────────────────────
@@ -8078,19 +8090,19 @@ def pagina_colusion():
             _max_n_vis = st.slider(
                 "Máx. proveedores en el grafo",
                 min_value=50, max_value=min(600, _n_nodes),
-                value=min(250, _n_nodes),
+                value=min(150, _n_nodes),
                 step=25,
                 key="col_g_maxn",
-                help="Se toman los N proveedores con mayor número de conexiones ponderadas.",
+                help="Se toman los N proveedores con mayor número de conexiones. Reducir mejora la legibilidad.",
             )
         with _cg2:
             _solo_sosp_g = st.checkbox(
-                "Solo comunidades sospechosas",
-                value=False,
+                "Solo grupos sospechosos",
+                value=True,   # activo por defecto: filtra el ruido visual
                 key="col_g_sosp",
                 help=(
-                    f"Atenúa los nodos de comunidades con densidad < {_min_density:.2f}. "
-                    "Las comunidades sospechosas se mantienen con su color."
+                    "Muestra únicamente los grupos de proveedores con alta densidad de conexiones "
+                    f"(≥ {_min_density:.2f}). Atenúa el resto para facilitar la lectura."
                 ),
             )
         with _cg3:
@@ -8098,7 +8110,7 @@ def pagina_colusion():
                 "Mostrar etiquetas",
                 value=False,
                 key="col_g_labels",
-                help="Muestra el nombre truncado de cada proveedor. Puede ser difícil de leer en redes grandes.",
+                help="Muestra el nombre de cada proveedor. Puede dificultar la lectura en redes grandes.",
             )
 
         # Determinar comunidades sospechosas para resaltar
@@ -8125,7 +8137,7 @@ def pagina_colusion():
 
         # ── Leyenda de comunidades ──────────────────────────────
         if _comm_data and _partition:
-            st.markdown("**Leyenda — Comunidades detectadas (top 15 por densidad):**")
+            st.markdown("**Grupos detectados (top 15 por densidad):**")
             _ley_items = _comm_data[:15]
             # Calcular community_id para cada entrada
             _ley_cids = []
@@ -8138,9 +8150,10 @@ def pagina_colusion():
             for _j, (_lr, _cid_l) in enumerate(zip(_ley_items, _ley_cids)):
                 _color_l = _COLORES_COMUNIDAD[_cid_l % len(_COLORES_COMUNIDAD)]
                 _icon_l  = "🔴" if _lr["🚨 Alerta"] == "🔴 Sospechosa" else "⚪"
+                _label_l = _lr.get("Nombre", _lr["Comunidad"])
                 _ley_cols[_j % _n_cols_l].markdown(
                     f'<span style="color:{_color_l};font-size:18px;">●</span> '
-                    f'{_icon_l} {_lr["Comunidad"]} '
+                    f'{_icon_l} {_label_l} '
                     f'({_lr["N° proveedores"]} prov., '
                     f'dens. {_lr["Densidad interna"]:.2f})',
                     unsafe_allow_html=True,
@@ -8276,14 +8289,29 @@ def pagina_colusion():
     # TAB 2 — Colusión por Louvain
     # ───────────────────────────────────────────────────────────────────
     with _tab2:
-        st.subheader("🔴 Colusión entre proveedores — Comunidades Louvain")
+        st.subheader("🔴 Grupos de proveedores con vínculos inusuales")
         st.caption(
-            "Comunidades de 3+ proveedores que trabajan predominantemente juntos. "
-            "Alta densidad interna sugiere coordinación entre adjudicatarios."
+            "Un **grupo (comunidad)** es un conjunto de proveedores que coinciden repetidamente "
+            "en los mismos procedimientos de contratación. Cuando varios proveedores que "
+            "deberían competir entre sí aparecen juntos de forma sistemática, puede indicar "
+            "coordinación o simulación de competencia (Art. 71 Fr. VII LAASSP)."
         )
 
+        with st.expander("ℹ️ ¿Qué es la densidad de una comunidad?"):
+            st.markdown(
+                """
+                La **densidad** mide qué tan "cerrado" es un grupo de proveedores:
+
+                - **Densidad = 1.0** → todos los proveedores del grupo coincidieron entre sí en algún procedimiento.
+                - **Densidad = 0.0** → ningún par de proveedores dentro del grupo comparte procedimientos.
+                - **Densidad ≥ 0.60** → al menos el 60% de los posibles pares del grupo han coincidido. Esto es **atípico** en una licitación abierta donde los proveedores deberían competir de forma independiente.
+
+                Un grupo con alta densidad sugiere que sus miembros no compiten realmente entre sí, sino que participan juntos de forma coordinada.
+                """
+            )
+
         if not _comm_data:
-            st.info("No se detectaron comunidades de 3+ proveedores con el umbral actual.")
+            st.info("No se detectaron grupos de 3+ proveedores con el umbral actual.")
         else:
             _df_comm = pd.DataFrame([{k: v for k, v in r.items() if k != "_members"}
                                       for r in _comm_data])
@@ -8292,41 +8320,55 @@ def pagina_colusion():
                               for m in r["_members"])
 
             _lk1, _lk2, _lk3 = st.columns(3)
-            _lk1.metric("🔵 Comunidades detectadas", f"{len(_comm_data):,}")
-            _lk2.metric("🔴 Comunidades sospechosas", f"{_n_alert_c:,}",
-                        help=f"Densidad ≥ {_min_density:.2f}")
+            _lk1.metric("🔵 Grupos detectados", f"{len(_comm_data):,}")
+            _lk2.metric("🔴 Grupos sospechosos", f"{_n_alert_c:,}",
+                        help=f"Densidad interna ≥ {_min_density:.2f} — vínculos muy frecuentes entre sus miembros")
             _lk3.metric("👥 Proveedores en alerta", f"{len(_prov_alert):,}")
 
             if _n_alert_c > 0:
                 st.error(
-                    f"🔴 **{_n_alert_c}** comunidad(es) con densidad interna ≥ {_min_density:.2f}. "
-                    f"Los proveedores dentro de estas comunidades aparecen juntos de forma sistemática."
+                    f"🔴 **{_n_alert_c}** grupo(s) con densidad ≥ {_min_density:.2f}: "
+                    f"sus proveedores coinciden juntos de forma sistemática, "
+                    f"lo que es inusual en un mercado con competencia real."
                 )
             else:
                 st.success(
-                    f"✅ Ninguna comunidad supera el umbral de densidad {_min_density:.2f}. "
-                    f"Ajusta el umbral o revisa el mínimo de procedimientos."
+                    f"✅ Ningún grupo supera el umbral de densidad {_min_density:.2f}. "
+                    f"Ajusta el umbral o el mínimo de procedimientos compartidos si deseas explorar más."
                 )
 
             st.dataframe(
-                _df_comm[["Comunidad", "N° proveedores", "Densidad interna",
+                _df_comm[["Comunidad", "Nombre", "N° proveedores", "Densidad interna",
                            "Procs. compartidos", "Contratos", "🚨 Alerta"]],
-                use_container_width=True
+                use_container_width=True,
+                column_config={
+                    "Nombre": st.column_config.TextColumn(
+                        "Empresa principal",
+                        help="Empresa con más contratos dentro del grupo (referencia descriptiva)"
+                    ),
+                    "Densidad interna": st.column_config.NumberColumn(
+                        "Densidad", format="%.2f",
+                        help="Proporción de pares que coincidieron en ≥1 procedimiento (0=ninguno, 1=todos)"
+                    ),
+                },
             )
 
             # Detalle por comunidad
-            st.subheader("🔍 Detalle de comunidad")
+            st.subheader("🔍 Detalle de grupo")
             _comm_opts = [
-                f"{r['Comunidad']} — {r['N° proveedores']} proveedores, "
-                f"densidad {r['Densidad interna']:.2f} {r['🚨 Alerta']}"
+                f"{r['Comunidad']} — {r['Nombre']} y {r['N° proveedores']-1} más "
+                f"(densidad {r['Densidad interna']:.2f}) {r['🚨 Alerta']}"
                 for r in _comm_data
             ]
-            _cs = st.selectbox("Selecciona una comunidad:", _comm_opts, key="col_t2_comm")
+            _cs = st.selectbox("Selecciona un grupo:", _comm_opts, key="col_t2_comm")
             _ci = _comm_opts.index(_cs)
             _cr = _comm_data[_ci]
             _mems = _cr["_members"]
 
-            st.markdown(f"**Proveedores de {_cr['Comunidad']}:**")
+            st.markdown(
+                f"**Proveedores del grupo {_cr['Comunidad']}** "
+                f"(densidad {_cr['Densidad interna']:.2f} — {_cr['🚨 Alerta']}):"
+            )
             for _m in sorted(_mems):
                 _nc = int(_dff_c["Proveedor o contratista"].eq(_m).sum())
                 st.markdown(f"- {_m} — {_nc:,} contratos")
@@ -8361,11 +8403,31 @@ def pagina_colusion():
     # TAB 3 — Concentración en red (Degree Centrality)
     # ───────────────────────────────────────────────────────────────────
     with _tab3:
-        st.subheader("📡 Concentración en red — Degree Centrality")
+        st.subheader("📡 Proveedores con demasiadas conexiones")
         st.caption(
-            "Proveedores con alta centralidad de grado: acumulan conexiones desproporcionadas "
-            "con otros proveedores. Pueden ser coordinadores centrales de la red."
+            "Identifica proveedores que coinciden con un número inusualmente alto de "
+            "otros proveedores a lo largo de los procedimientos de contratación. "
+            "En un mercado competitivo, cada empresa debería ganar licitaciones "
+            "de forma independiente — si una empresa aparece repetidamente junto a "
+            "muchos otros proveedores distintos, puede estar actuando como coordinador "
+            "de una red de simulación de competencia."
         )
+        with st.expander("ℹ️ ¿Qué es el Degree Centrality?"):
+            st.markdown(
+                """
+                El **Degree Centrality** (centralidad de grado) es un número entre 0 y 1 que indica
+                qué fracción del total de proveedores en la red tiene vínculos directos con
+                el proveedor analizado:
+
+                - **Centralidad = 0.0** → el proveedor no comparte ningún procedimiento con otros.
+                - **Centralidad = 1.0** → el proveedor coincidió con *todos* los demás proveedores de la red.
+                - **Centralidad ≥ 0.20** (umbral predeterminado) → el proveedor tiene vínculos con al
+                  menos el 20% del universo de proveedores, lo que es atípicamente alto y merece revisión.
+
+                Un proveedor con centralidad muy alta podría estar funcionando como "hub" o nodo
+                central de una red coordinada de adjudicaciones.
+                """
+            )
 
         _dc_dict   = nx.degree_centrality(G)
         _deg_w     = dict(G.degree(weight="weight"))
@@ -8401,9 +8463,9 @@ def pagina_colusion():
 
         if len(_df_dc_alerta) > 0:
             st.error(
-                f"🔴 **{len(_df_dc_alerta)}** proveedor(es) con degree centrality "
-                f"≥ {_min_dc:.2f}: posición dominante, concentran conexiones "
-                f"desproporcionadas en la red."
+                f"🔴 **{len(_df_dc_alerta)}** proveedor(es) con centralidad ≥ {_min_dc:.2f}: "
+                f"coinciden con un porcentaje inusualmente alto de los demás proveedores de la red. "
+                f"Posible nodo coordinador de simulación de competencia."
             )
 
         _top_n_dc = st.selectbox("Top N proveedores", [20, 30, 50], index=1, key="col_t3_topn")
