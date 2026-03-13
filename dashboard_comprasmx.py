@@ -115,6 +115,17 @@ footer                           { visibility: hidden !important; }
 [data-testid="stToolbar"]        { visibility: hidden !important; }
 [data-testid="stDecoration"]     { display: none !important; }
 [data-testid="stStatusWidget"]   { display: none !important; }
+
+/* Restaurar controles de colapso/expansión del sidebar.
+   En versiones recientes de Streamlit estos botones viven DENTRO de
+   stToolbar, por lo que heredan visibility:hidden del padre.
+   Forzamos su visibilidad para que las flechas << >> funcionen
+   correctamente en escritorio y en móvil. */
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"] {
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
