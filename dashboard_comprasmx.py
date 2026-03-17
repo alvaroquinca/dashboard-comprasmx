@@ -9499,9 +9499,17 @@ def pagina_ranking_riesgo():
             _bar_data["D2_w"] = (_bar_data["D2"] * 0.25).round(2)
             _bar_data["D3_w"] = (_bar_data["D3"] * 0.25).round(2)
             _bar_data["D4_w"] = (_bar_data["D4"] * 0.20).round(2)
-            _bar_data["_uc_short"] = _bar_data[_uc_col].apply(_trunc)
+            # Orden descendente: mayor score arriba
+            # Con autorange="reversed" el primer elemento de la lista queda arriba
+            _uc_order_bar = (
+                _bar_data
+                .sort_values("Score_UC", ascending=False)[_uc_col]
+                .tolist()
+            )
+            # Etiquetas truncadas para el eje y (solo display; la clave sigue siendo el nombre completo)
+            _ticktext_bar = [_trunc(n) for n in _uc_order_bar]
             _bar_data_m = _bar_data.melt(
-                id_vars=["_uc_short", "Score_UC"],
+                id_vars=[_uc_col, "Score_UC"],
                 value_vars=["D1_w", "D2_w", "D3_w", "D4_w"],
                 var_name="Dimensión", value_name="Valor"
             )
@@ -9518,108 +9526,31 @@ def pagina_ranking_riesgo():
                 "D4 — Prácticas anticmp. (×0.20)":  IMSS_GRIS,
             }
             _bar_data_m["Dimensión"] = _bar_data_m["Dimensión"].map(_dim_labels)
-            # Ordenar UCs: mayor score arriba (plotly horizontal invierte el orden)
-            _uc_order_bar = (
-                _bar_data
-                .sort_values("Score_UC", ascending=True)["_uc_short"]
-                .tolist()
-            )
-            _titulo_bar = (
-                f"Top {_top_n_uc} UCs — Score compuesto por dimensión"
-                if _top_n_uc != "Todas"
-                else "Todas las UCs — Score compuesto por dimensión"
-            )
             fig_uc_rank = px.bar(
                 _bar_data_m,
-                x="Valor", y="_uc_short",
+                x="Valor", y=_uc_col,          # nombre completo como clave → sin duplicados
                 color="Dimensión",
                 orientation="h",
                 color_discrete_map=_dim_colors,
-                category_orders={"_uc_short": _uc_order_bar},
-                labels={"Valor": "Score UC (0–100)", "_uc_short": ""},
-                title=_titulo_bar,
-                hover_data={"Score_UC": True},
+                category_orders={_uc_col: _uc_order_bar},
+                labels={"Valor": "Score UC (0–100)", _uc_col: ""},
             )
             fig_uc_rank.update_layout(
                 font=plotly_font(),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 xaxis=dict(range=[0, 100], title="Score UC (0–100)"),
+                yaxis=dict(
+                    autorange="reversed",       # mayor score arriba
+                    tickvals=_uc_order_bar,     # claves (nombres completos)
+                    ticktext=_ticktext_bar,     # etiquetas truncadas para display
+                    tickfont=dict(size=10),
+                ),
                 legend=dict(orientation="h", yanchor="bottom", y=1.01,
                             xanchor="left", x=0),
-                margin=dict(t=60, b=40, l=190),
+                margin=dict(t=20, b=40, l=190),
                 height=max(350, len(_agg_uc_f) * 32 + 80),
             )
             st.plotly_chart(fig_uc_rank, use_container_width=True)
-
-            st.divider()
-
-            # ── Heatmap UC × indicadores ───────────────────────────
-            st.markdown("#### Heatmap de indicadores por UC")
-            st.caption(
-                "Color normalizado por columna (blanco = mínimo, rojo = máximo dentro de cada indicador). "
-                "Las celdas muestran el valor bruto."
-            )
-
-            # Construir DataFrame del heatmap
-            _hm_cols_def = [
-                ("SABG\nCrítico",    "n_sc"),
-                ("EFOS\nDefinitivo", "n_ed"),
-                ("SABG\nAlto",       "n_sa"),
-                ("EFOS\nPresunto",   "n_ep"),
-                ("SABG\nHistorial",  "n_sm"),
-                ("Caso\nFortuito",   "n_cf"),
-                ("Reciente\nCreac.", "n_rc"),
-                ("Zona\nUmbral",     "n_umb"),
-                ("Fracc.\nProveed.", "n_prov_frag"),
-                ("% AD",             "n_ad"),
-            ]
-            _hm_df = _agg_uc_f[["Nombre de la UC"] + [c for _, c in _hm_cols_def]].copy()
-            # % AD como porcentaje
-            _hm_df["n_ad"] = (_hm_df["n_ad"] / _agg_uc_f["n_total"] * 100).round(1)
-
-            _hm_labels = [lbl for lbl, _ in _hm_cols_def]
-            _hm_values_raw = _hm_df[[c for _, c in _hm_cols_def]].values.astype(float)
-            _hm_uc_names   = [_trunc(n, 40) for n in _hm_df["Nombre de la UC"].tolist()]
-
-            # Normalizar por columna para el color (0–1)
-            _hm_col_max = _hm_values_raw.max(axis=0)
-            _hm_col_max[_hm_col_max == 0] = 1  # evitar div/0
-            _hm_norm = _hm_values_raw / _hm_col_max
-
-            # Texto de anotación: entero para conteos, decimal para % AD
-            _hm_text = []
-            for _row_i, _row_v in enumerate(_hm_values_raw):
-                _row_txt = []
-                for _col_j, _v in enumerate(_row_v):
-                    if _hm_labels[_col_j] == "% AD":
-                        _row_txt.append(f"{_v:.0f}%")
-                    elif _hm_labels[_col_j] == "Fracc.\nProveed.":
-                        _row_txt.append(f"{int(_v)}" if _v > 0 else "")
-                    else:
-                        _row_txt.append(f"{int(_v)}" if _v > 0 else "")
-                _hm_text.append(_row_txt)
-
-            fig_hm = go.Figure(data=go.Heatmap(
-                z=_hm_norm,
-                x=_hm_labels,
-                y=_hm_uc_names,
-                text=_hm_text,
-                texttemplate="%{text}",
-                textfont=dict(family="Noto Sans, sans-serif", size=11, color="#171B19"),
-                colorscale=[[0, "#FFFFFF"], [0.3, "#F2C0C8"], [0.7, "#C04060"], [1.0, IMSS_ROJO]],
-                showscale=False,
-                hoverongaps=False,
-                hovertemplate="<b>%{y}</b><br>%{x}: %{text}<extra></extra>",
-            ))
-            fig_hm.update_layout(
-                font=plotly_font(),
-                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-                xaxis=dict(side="top", tickfont=dict(size=10)),
-                yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
-                margin=dict(t=80, b=20, l=190, r=20),
-                height=max(300, len(_agg_uc_f) * 30 + 100),
-            )
-            st.plotly_chart(fig_hm, use_container_width=True)
 
             st.divider()
 
