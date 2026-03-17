@@ -3746,6 +3746,7 @@ def pagina_historica():
         fig_panorama_h.update_traces(line=dict(width=3), marker=dict(size=10))
         fig_panorama_h.update_layout(
             font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            xaxis=dict(type="category"),
             yaxis=dict(range=[0, 105], title="% del monto contratado"),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(t=60, b=40),
@@ -3776,6 +3777,7 @@ def pagina_historica():
         )
         fig_evo_t.update_layout(
             font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            xaxis=dict(type="category"),
             yaxis_title="Monto (MXN)",
             legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0)
         )
@@ -3837,6 +3839,7 @@ def pagina_historica():
             _es_pct_h = _met_sel_h.startswith("%")
             fig_uc_h.update_layout(
                 font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                xaxis=dict(type="category"),
                 yaxis=dict(range=[0, 105] if _es_pct_h else None),
                 legend=dict(orientation="h", yanchor="top", y=-0.28,
                             xanchor="left", x=0)
@@ -7695,7 +7698,7 @@ def pagina_empresa():
             font=plotly_font(),
             plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
             title_font_color=IMSS_VERDE_OSC,
-            xaxis_title="Año", yaxis_title="Monto (MXN)",
+            xaxis=dict(type="category", title="Año"), yaxis_title="Monto (MXN)",
             legend_title_text="",
             legend=dict(font=dict(family="Noto Sans, sans-serif", size=11))
         )
