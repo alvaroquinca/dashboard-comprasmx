@@ -141,6 +141,10 @@ st.title("🔍 Dashboard de Integridad en Contrataciones Públicas")
 def cargar_datos(filename):
     df = pd.read_csv(filename, encoding="utf-8", low_memory=False)
     df["Importe DRC"] = pd.to_numeric(df["Importe DRC"], errors="coerce")
+    # Normalizar Institución a MAYÚSCULAS — formato antiguo usa Title Case,
+    # nuevo usa MAYÚSCULAS. Así el filtro del sidebar funciona con todos los años.
+    if "Institución" in df.columns:
+        df["Institución"] = df["Institución"].str.strip().str.upper()
     if "Partida específica" not in df.columns:
         df["Partida específica"] = ""
     df["Partida específica"] = df["Partida específica"].astype(str).str.strip().str.zfill(5)
