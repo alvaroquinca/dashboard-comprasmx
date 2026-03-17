@@ -9499,11 +9499,11 @@ def pagina_ranking_riesgo():
             _bar_data["D2_w"] = (_bar_data["D2"] * 0.25).round(2)
             _bar_data["D3_w"] = (_bar_data["D3"] * 0.25).round(2)
             _bar_data["D4_w"] = (_bar_data["D4"] * 0.20).round(2)
-            # Orden descendente: mayor score arriba
-            # Con autorange="reversed" el primer elemento de la lista queda arriba
+            # En Plotly horizontal bar, el ÚLTIMO elemento de category_orders queda ARRIBA.
+            # Ordenamos ascending=True → el de mayor score es el último → aparece arriba.
             _uc_order_bar = (
                 _bar_data
-                .sort_values("Score_UC", ascending=False)[_uc_col]
+                .sort_values("Score_UC", ascending=True)[_uc_col]
                 .tolist()
             )
             # Etiquetas truncadas para el eje y (solo display; la clave sigue siendo el nombre completo)
@@ -9540,7 +9540,6 @@ def pagina_ranking_riesgo():
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 xaxis=dict(range=[0, 100], title="Score UC (0–100)"),
                 yaxis=dict(
-                    autorange="reversed",       # mayor score arriba
                     tickvals=_uc_order_bar,     # claves (nombres completos)
                     ticktext=_ticktext_bar,     # etiquetas truncadas para display
                     tickfont=dict(size=10),
