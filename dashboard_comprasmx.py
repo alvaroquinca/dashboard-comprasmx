@@ -9103,7 +9103,7 @@ def pagina_ranking_riesgo():
         "🏛️ Adscripción / OOAD", _adsc_opts, key="uc_rk2_adsc"
     )
     _top_n_uc  = _uc_rk2_c2.selectbox(
-        "Top N UCs", [10, 20, 50], index=0, key="uc_rk2_topn"
+        "Top N UCs", [10, 20, 50, "Todas"], index=0, key="uc_rk2_topn"
     )
     _score_min_uc = _uc_rk2_c3.selectbox(
         "Score mínimo", [0, 10, 25, 50], index=0, key="uc_rk2_smin",
@@ -9437,12 +9437,14 @@ def pagina_ranking_riesgo():
             _agg_uc["Alerta dominante"] = _agg_uc.apply(_alerta_dom, axis=1)
 
             # Aplicar score mínimo y ordenar
-            _agg_uc_f = (
+            _agg_uc_filt = (
                 _agg_uc[_agg_uc["Score_UC"] >= _score_min_uc]
                 .sort_values("Score_UC", ascending=False)
-                .head(_top_n_uc)
-                .reset_index(drop=True)
             )
+            _agg_uc_f = (
+                _agg_uc_filt if _top_n_uc == "Todas"
+                else _agg_uc_filt.head(_top_n_uc)
+            ).reset_index(drop=True)
             _agg_uc_f.index += 1
 
         # ── KPIs ──────────────────────────────────────────────────
@@ -9485,37 +9487,47 @@ def pagina_ranking_riesgo():
             st.success("✅ No hay UCs con indicadores de riesgo en el umbral seleccionado.")
         else:
             # Helper: truncar nombres largos para ejes de gráficas
-            def _trunc(name, n=40):
+            def _trunc(name, n=28):
                 s = str(name)
                 return s if len(s) <= n else s[:n - 1] + "…"
 
-            # ── Barras apiladas D1/D2/D3/D4 ───────────────────────
+            # ── Barras apiladas: contribuciones ponderadas (suman = Score_UC) ──
             st.markdown("#### Distribución del score por dimensión")
             _bar_data = _agg_uc_f[[_uc_col, "D1", "D2", "D3", "D4", "Score_UC"]].copy()
+            # Contribuciones ponderadas → su suma = Score_UC exacto
+            _bar_data["D1_w"] = (_bar_data["D1"] * 0.30).round(2)
+            _bar_data["D2_w"] = (_bar_data["D2"] * 0.25).round(2)
+            _bar_data["D3_w"] = (_bar_data["D3"] * 0.25).round(2)
+            _bar_data["D4_w"] = (_bar_data["D4"] * 0.20).round(2)
             _bar_data["_uc_short"] = _bar_data[_uc_col].apply(_trunc)
             _bar_data_m = _bar_data.melt(
                 id_vars=["_uc_short", "Score_UC"],
-                value_vars=["D1", "D2", "D3", "D4"],
+                value_vars=["D1_w", "D2_w", "D3_w", "D4_w"],
                 var_name="Dimensión", value_name="Valor"
             )
             _dim_labels = {
-                "D1": "D1 — Integridad",
-                "D2": "D2 — Amplitud",
-                "D3": "D3 — Exposición econ.",
-                "D4": "D4 — Prácticas anticmp.",
+                "D1_w": "D1 — Integridad (×0.30)",
+                "D2_w": "D2 — Amplitud (×0.25)",
+                "D3_w": "D3 — Exposición econ. (×0.25)",
+                "D4_w": "D4 — Prácticas anticmp. (×0.20)",
             }
             _dim_colors = {
-                "D1 — Integridad":          IMSS_ROJO,
-                "D2 — Amplitud":            IMSS_ORO,
-                "D3 — Exposición econ.":    "#E07B00",
-                "D4 — Prácticas anticmp.":  IMSS_GRIS,
+                "D1 — Integridad (×0.30)":          IMSS_ROJO,
+                "D2 — Amplitud (×0.25)":            IMSS_ORO,
+                "D3 — Exposición econ. (×0.25)":    "#E07B00",
+                "D4 — Prácticas anticmp. (×0.20)":  IMSS_GRIS,
             }
             _bar_data_m["Dimensión"] = _bar_data_m["Dimensión"].map(_dim_labels)
-            # Ordenar UCs por Score_UC descendente para el gráfico
+            # Ordenar UCs: mayor score arriba (plotly horizontal invierte el orden)
             _uc_order_bar = (
                 _bar_data
                 .sort_values("Score_UC", ascending=True)["_uc_short"]
                 .tolist()
+            )
+            _titulo_bar = (
+                f"Top {_top_n_uc} UCs — Score compuesto por dimensión"
+                if _top_n_uc != "Todas"
+                else "Todas las UCs — Score compuesto por dimensión"
             )
             fig_uc_rank = px.bar(
                 _bar_data_m,
@@ -9524,16 +9536,17 @@ def pagina_ranking_riesgo():
                 orientation="h",
                 color_discrete_map=_dim_colors,
                 category_orders={"_uc_short": _uc_order_bar},
-                labels={"Valor": "Contribución al score", "_uc_short": ""},
-                title=f"Top {_top_n_uc} UCs — Score compuesto por dimensión",
+                labels={"Valor": "Score UC (0–100)", "_uc_short": ""},
+                title=_titulo_bar,
+                hover_data={"Score_UC": True},
             )
             fig_uc_rank.update_layout(
                 font=plotly_font(),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-                xaxis=dict(range=[0, 100], title="Score (0–100)"),
+                xaxis=dict(range=[0, 100], title="Score UC (0–100)"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.01,
                             xanchor="left", x=0),
-                margin=dict(t=60, b=40, l=220),
+                margin=dict(t=60, b=40, l=190),
                 height=max(350, len(_agg_uc_f) * 32 + 80),
             )
             st.plotly_chart(fig_uc_rank, use_container_width=True)
@@ -9603,7 +9616,7 @@ def pagina_ranking_riesgo():
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 xaxis=dict(side="top", tickfont=dict(size=10)),
                 yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
-                margin=dict(t=80, b=20, l=220, r=20),
+                margin=dict(t=80, b=20, l=190, r=20),
                 height=max(300, len(_agg_uc_f) * 30 + 100),
             )
             st.plotly_chart(fig_hm, use_container_width=True)
