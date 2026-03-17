@@ -3650,6 +3650,7 @@ def pagina_historica():
         _uc_h["Pct_CF"] = (
             _uc_h["Monto_CF"] / _uc_h["Monto_total"].replace(0, pd.NA) * 100
         ).fillna(0)
+        _uc_h["Monto_total_M"] = _uc_h["Monto_total"] / 1e6
 
         _yr_first_h = _anios_h[0]
         _yr_last_h  = _anios_h[-1]
@@ -3674,7 +3675,7 @@ def pagina_historica():
                     _delta_m = f"{(_r['Monto_total'] / _prev.iloc[0]['Monto_total'] - 1) * 100:+.1f}% vs {str(int(_yr)-1)}"
                 st.metric(
                     "💰 Monto total",
-                    f"${_r['Monto_total']/1e9:,.2f} B MXN" if _r["Monto_total"] >= 1e9
+                    f"${_r['Monto_total']/1e9:,.2f} mm MXN" if _r["Monto_total"] >= 1e9
                     else f"${_r['Monto_total']/1e6:,.1f} M MXN",
                     delta=_delta_m, delta_color="off"
                 )
@@ -3702,11 +3703,6 @@ def pagina_historica():
             color_discrete_map=_colores_pan_h,
             labels={"Porcentaje": "% del monto contratado"},
         )
-        fig_panorama_h.add_hline(
-            y=65, line_dash="dash", line_color=IMSS_ORO,
-            annotation_text="Referencia 65% LP", annotation_position="top right",
-            annotation_font=dict(family="Noto Sans, sans-serif", color=IMSS_ORO, size=12)
-        )
         fig_panorama_h.update_traces(line=dict(width=3), marker=dict(size=10))
         fig_panorama_h.update_layout(
             font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
@@ -3732,21 +3728,22 @@ def pagina_historica():
             "Licitación Pública", "Invitación a 3 personas", "Entre Entes Públicos",
             "Adjudicación Directa — Fr. I", "Adjudicación Directa", "Sin clasificar"
         ]
+        _tipos_h["Monto_M"] = _tipos_h["Importe DRC"] / 1e6
         fig_evo_t = px.bar(
-            _tipos_h, x="Año", y="Importe DRC", color="Tipo Simplificado",
+            _tipos_h, x="Año", y="Monto_M", color="Tipo Simplificado",
             color_discrete_map=COLORES_TIPO, barmode="stack",
             category_orders={"Tipo Simplificado": _orden_tipos_h},
             title="Monto contratado por tipo de procedimiento y año",
-            labels={"Importe DRC": "Monto (MXN)", "Tipo Simplificado": "Tipo"}
+            labels={"Monto_M": "Monto (M MXN)", "Tipo Simplificado": "Tipo"}
         )
         fig_evo_t.update_layout(
             font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
             xaxis=dict(type="category"),
-            yaxis_title="Monto (MXN)",
+            yaxis_title="Monto (M MXN)",
             legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0)
         )
         fig_evo_t.update_traces(
-            hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Monto: $%{y:,.0f}<extra></extra>"
+            hovertemplate="<b>%{fullData.name}</b><br>Año: %{x}<br>Monto: $%{y:,.1f} M MXN<extra></extra>"
         )
         st.plotly_chart(fig_evo_t, use_container_width=True)
 
@@ -3773,12 +3770,13 @@ def pagina_historica():
             )
 
         _met_col_h = {
-            "Monto total":          "Monto_total",
+            "Monto total":          "Monto_total_M",
             "% Licitación Pública": "Pct_LP",
             "% AD otras causales":  "Pct_AD",
             "% Caso fortuito":      "Pct_CF",
             "N° contratos":         "Contratos",
         }[_met_sel_h]
+        _met_label_h = "Monto (M MXN)" if _met_sel_h == "Monto total" else _met_sel_h
 
         if _ucs_sel_h:
             _hist_sel_h = _uc_h[_uc_h["Nombre de la UC"].isin(_ucs_sel_h)]
@@ -3791,7 +3789,7 @@ def pagina_historica():
                 color="Nombre de la UC", markers=True,
                 title=f"Evolución de '{_met_sel_h}' — UCs seleccionadas",
                 color_discrete_map=_cmap_h,
-                labels={_met_col_h: _met_sel_h, "Nombre de la UC": "UC"}
+                labels={_met_col_h: _met_label_h, "Nombre de la UC": "UC"}
             )
             if _met_sel_h == "% Licitación Pública":
                 fig_uc_h.add_hline(
@@ -3804,7 +3802,8 @@ def pagina_historica():
             fig_uc_h.update_layout(
                 font=plotly_font(), plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 xaxis=dict(type="category"),
-                yaxis=dict(range=[0, 105] if _es_pct_h else None),
+                yaxis=dict(range=[0, 105] if _es_pct_h else None,
+                           title=_met_label_h),
                 legend=dict(orientation="h", yanchor="top", y=-0.28,
                             xanchor="left", x=0)
             )
