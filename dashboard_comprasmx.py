@@ -141,7 +141,11 @@ st.title("🔍 Dashboard de Integridad en Contrataciones Públicas")
 def cargar_datos(filename):
     df = pd.read_csv(filename, encoding="utf-8", low_memory=False)
     df["Importe DRC"] = pd.to_numeric(df["Importe DRC"], errors="coerce")
+    if "Partida específica" not in df.columns:
+        df["Partida específica"] = ""
     df["Partida específica"] = df["Partida específica"].astype(str).str.strip().str.zfill(5)
+    # "00000" proviene de celdas vacías (años 2019-2022 sin partida presupuestaria) → dejar vacío
+    df.loc[df["Partida específica"] == "00000", "Partida específica"] = ""
     def clasificar(tipo):
         if pd.isna(tipo):
             return "Sin clasificar"
@@ -391,13 +395,20 @@ _ARCHIVOS_ANIO = {
     "2026": "contratos_comprasmx_2026.csv",
     "2025": "contratos_comprasmx_2025.csv",
     "2024": "contratos_compranet_2024.csv",
+    "2023": "contratos_compranet_2023.csv",
+    "2022": "contratos_compranet_2022.csv",
+    "2021": "contratos_compranet_2021.csv",
+    "2020": "contratos_compranet_2020.csv",
+    "2019": "contratos_compranet_2019.csv",
 }
+# Años con partida presupuestaria CUCoP (formato ComprasMX/CompraNet nuevo)
+_ANIOS_CON_CUCOP = {"2023", "2024", "2025", "2026"}
 _anios_disponibles = list(_ARCHIVOS_ANIO.keys())
 anios_sel = st.sidebar.multiselect(
     "📅 Año(s) de datos",
     options=_anios_disponibles,
     default=["2026"],
-    help="Selecciona uno o más años para analizar en conjunto. Al combinar años se habilita el análisis comparativo."
+    help="2019–2022: formato CompraNet (sin partida CUCoP, sin caso fortuito). 2023–2026: formato ComprasMX completo."
 )
 # Garantizar que siempre haya al menos un año seleccionado
 if not anios_sel:
@@ -417,6 +428,9 @@ for _a in anios_sel:
             st.sidebar.warning(f"No se pudo cargar el archivo de {_a}.")
 
 df = pd.concat(_dfs_anio, ignore_index=True) if _dfs_anio else cargar_datos(_ARCHIVOS_ANIO["2026"])
+
+# Flag: al menos un año seleccionado tiene datos de partida presupuestaria CUCoP
+_tiene_cucop = bool(set(anios_sel) & _ANIOS_CON_CUCOP)
 
 # Aplicar nombres editados de UC desde Base_UC_2025_V2.xlsx a todo el dashboard
 if len(df_dir_uc) > 0 and "Clave_UC" in df_dir_uc.columns:
@@ -765,6 +779,19 @@ def pagina_descripcion():
 
     # ── SECCIÓN 3: ANÁLISIS POR PARTIDA PRESUPUESTARIA (CUCOP) ──
     st.subheader("3️⃣ Gasto por Partida Presupuestaria (CUCoP)")
+    # Aviso cuando hay años sin partida (2019-2022)
+    _anios_sin_cucop = sorted(set(anios_sel) - _ANIOS_CON_CUCOP)
+    if not _tiene_cucop:
+        st.info(
+            "ℹ️ Los años seleccionados (2019–2022) utilizan el formato CompraNet anterior, "
+            "que no incluye la columna de Partida presupuestaria compatible con el catálogo CUCoP. "
+            "Selecciona 2023 o posterior para ver este análisis."
+        )
+    elif _anios_sin_cucop:
+        st.caption(
+            f"ℹ️ Los años {', '.join(_anios_sin_cucop)} (CompraNet antiguo) no incluyen "
+            "partida presupuestaria — solo se muestra el gasto de los años con datos CUCoP."
+        )
     with st.expander("ℹ️ Metodología y contexto", expanded=False):
         st.markdown(
             """
@@ -783,6 +810,8 @@ def pagina_descripcion():
     # Explotar contratos con múltiples partidas presupuestarias (ej: "15401, 27101, 27201, 27301")
     # El monto se divide en partes iguales entre todas las partidas del contrato
     _dff_exp = dff.copy()
+    # Filtrar contratos sin partida (años 2019-2022 tienen partida vacía)
+    _dff_exp = _dff_exp[_dff_exp["Partida específica"].str.strip() != ""]
     _dff_exp["_lista"] = _dff_exp["Partida específica"].str.split(",")
     _dff_exp["_n"] = _dff_exp["_lista"].apply(len)
     _dff_exp["Importe DRC"] = _dff_exp["Importe DRC"] / _dff_exp["_n"]
@@ -3523,19 +3552,48 @@ def pagina_explorador():
 # ───────────────────────────────────────────────────────────────
 def pagina_historica():
 
-    st.header("📈 Evolución Histórica del Gasto y Riesgos por UC (2024–2026)")
+    st.header("📈 Evolución Histórica del Gasto por UC (2019–2026)")
     st.caption(
-        "Carga los tres años disponibles y aplica el mismo filtro de institución del sidebar. "
-        "Los demás filtros (tipo de procedimiento, monto mínimo, etc.) no se aplican "
-        "para garantizar la comparabilidad entre años."
+        "Aplica el mismo filtro de institución del sidebar. "
+        "Los demás filtros del sidebar no se aplican para garantizar comparabilidad entre años. "
+        "**Nota:** El indicador de caso fortuito y el análisis CUCoP solo están disponibles "
+        "a partir de 2023 (formato ComprasMX)."
     )
 
-    # ── Cargar los tres años (reutiliza caché de cargar_datos) ──
-    _HIST = {
+    # ── Catálogo completo de años disponibles ──
+    _HIST_TODOS = {
+        "2019": "contratos_compranet_2019.csv",
+        "2020": "contratos_compranet_2020.csv",
+        "2021": "contratos_compranet_2021.csv",
+        "2022": "contratos_compranet_2022.csv",
+        "2023": "contratos_compranet_2023.csv",
         "2024": "contratos_compranet_2024.csv",
         "2025": "contratos_comprasmx_2025.csv",
         "2026": "contratos_comprasmx_2026.csv",
     }
+    _CF_AVAIL = {"2023", "2024", "2025", "2026"}  # años con Descripción excepción
+
+    _hc1, _hc2 = st.columns([3, 1])
+    with _hc1:
+        _anios_hist_sel = st.multiselect(
+            "Años a comparar",
+            options=list(_HIST_TODOS.keys()),
+            default=["2023", "2024", "2025", "2026"],
+            key="hist_anios_sel",
+            help="2019–2022: sin datos de caso fortuito ni CUCoP (CompraNet antiguo)"
+        )
+    with _hc2:
+        _sin_cf_h = sorted(set(_anios_hist_sel) - _CF_AVAIL)
+        if _sin_cf_h:
+            st.caption(f"⚠️ Sin caso fortuito: {', '.join(_sin_cf_h)}")
+
+    if len(_anios_hist_sel) < 2:
+        st.info("ℹ️ Selecciona al menos 2 años para comparar.")
+        return
+
+    _HIST = {a: _HIST_TODOS[a] for a in _anios_hist_sel}
+
+    # ── Cargar años seleccionados (reutiliza caché de cargar_datos) ──
     _dfs_h = {}
     for _yr, _fn in _HIST.items():
         try:
