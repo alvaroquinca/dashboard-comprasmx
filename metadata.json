@@ -2,35 +2,35 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-03-16 12:12",
+    "actualizado": "2026-03-17 09:37",
     "filas": 3986,
     "columnas": 21
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-03-16 12:12",
+    "actualizado": "2026-03-17 09:38",
     "filas": 18700,
     "columnas": 21
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-03-16 12:12",
+    "actualizado": "2026-03-17 09:39",
     "filas": 43996,
     "columnas": 21
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-03-16 12:12",
+    "actualizado": "2026-03-17 09:39",
     "filas": 14280,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-03-16 12:14",
+    "actualizado": "2026-03-17 09:40",
     "filas": 22164,
     "columnas": 25
   },
@@ -63,5 +63,64 @@
     "descripcion": "Proveedores_Contratistas_Sancionados.xlsx",
     "fuente": "local",
     "actualizado": "2026-03-05 13:30"
+  },
+  "contratos_compranet_2023.csv": {
+    "descripcion": "Contratos CompraNet 2023 — IMSS (nuevo formato ComprasMX, 21 cols)",
+    "fuente": "local — contratos_compranet_2023.csv (APF)",
+    "formato": "nuevo_comprasmx",
+    "columna_monto": "Importe DRC",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 64593,
+    "columnas": 21
+  },
+  "contratos_compranet5_2023.csv": {
+    "descripcion": "Contratos CompraNet5 2023 — IMSS (formato antiguo CompraNet, 45 cols)",
+    "fuente": "local — Contratos_CompraNet5.csv",
+    "formato": "antiguo_compranet5",
+    "columna_monto": "Importe DRC",
+    "diferencias": "Fundamento legal en lugar de Artículo excepción/Ley; Clave CUCOP en lugar de Partida específica; fechas en YYYY-MM-DD HH:MM:SS GMT",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 3189,
+    "columnas": 45
+  },
+  "contratos_compranet_2022.csv": {
+    "descripcion": "Contratos CompraNet 2022 — IMSS (formato antiguo, 45 cols)",
+    "fuente": "local — Contratos2022_2310241123-2.csv",
+    "formato": "antiguo_compranet5",
+    "columna_monto": "Importe DRC",
+    "diferencias": "Fundamento legal en lugar de Artículo excepción/Ley; Clave CUCOP en lugar de Partida específica",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 79875,
+    "columnas": 45
+  },
+  "contratos_compranet_2021.csv": {
+    "descripcion": "Contratos CompraNet 2021 — IMSS (formato antiguo, 45 cols)",
+    "fuente": "local — Contratos2021_241102110130.csv",
+    "formato": "antiguo_compranet5",
+    "columna_monto": "Importe DRC",
+    "diferencias": "Fundamento legal en lugar de Artículo excepción/Ley; Clave CUCOP en lugar de Partida específica",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 81125,
+    "columnas": 45
+  },
+  "contratos_compranet_2020.csv": {
+    "descripcion": "Contratos CompraNet 2020 — IMSS (formato antiguo, 45 cols)",
+    "fuente": "local — Contratos2020_241106100537.csv",
+    "formato": "antiguo_compranet5",
+    "columna_monto": "Importe DRC",
+    "diferencias": "Fundamento legal en lugar de Artículo excepción/Ley; Clave CUCOP en lugar de Partida específica",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 49325,
+    "columnas": 45
+  },
+  "contratos_compranet_2019.csv": {
+    "descripcion": "Contratos CompraNet 2019 — IMSS (formato antiguo, 45 cols)",
+    "fuente": "local — Contratos2019_241106101737.csv",
+    "formato": "antiguo_compranet5",
+    "columna_monto": "Importe DRC",
+    "diferencias": "Fundamento legal en lugar de Artículo excepción/Ley; Clave CUCOP en lugar de Partida específica",
+    "actualizado": "2026-03-17 10:43",
+    "filas": 57718,
+    "columnas": 45
   }
 }
