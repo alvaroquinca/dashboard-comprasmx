@@ -9484,11 +9484,17 @@ def pagina_ranking_riesgo():
         if len(_agg_uc_f) == 0:
             st.success("✅ No hay UCs con indicadores de riesgo en el umbral seleccionado.")
         else:
+            # Helper: truncar nombres largos para ejes de gráficas
+            def _trunc(name, n=40):
+                s = str(name)
+                return s if len(s) <= n else s[:n - 1] + "…"
+
             # ── Barras apiladas D1/D2/D3/D4 ───────────────────────
             st.markdown("#### Distribución del score por dimensión")
             _bar_data = _agg_uc_f[[_uc_col, "D1", "D2", "D3", "D4", "Score_UC"]].copy()
+            _bar_data["_uc_short"] = _bar_data[_uc_col].apply(_trunc)
             _bar_data_m = _bar_data.melt(
-                id_vars=[_uc_col, "Score_UC"],
+                id_vars=["_uc_short", "Score_UC"],
                 value_vars=["D1", "D2", "D3", "D4"],
                 var_name="Dimensión", value_name="Valor"
             )
@@ -9508,17 +9514,17 @@ def pagina_ranking_riesgo():
             # Ordenar UCs por Score_UC descendente para el gráfico
             _uc_order_bar = (
                 _bar_data
-                .sort_values("Score_UC", ascending=True)[_uc_col]
+                .sort_values("Score_UC", ascending=True)["_uc_short"]
                 .tolist()
             )
             fig_uc_rank = px.bar(
                 _bar_data_m,
-                x="Valor", y=_uc_col,
+                x="Valor", y="_uc_short",
                 color="Dimensión",
                 orientation="h",
                 color_discrete_map=_dim_colors,
-                category_orders={_uc_col: _uc_order_bar},
-                labels={"Valor": "Contribución al score", _uc_col: ""},
+                category_orders={"_uc_short": _uc_order_bar},
+                labels={"Valor": "Contribución al score", "_uc_short": ""},
                 title=f"Top {_top_n_uc} UCs — Score compuesto por dimensión",
             )
             fig_uc_rank.update_layout(
@@ -9527,7 +9533,7 @@ def pagina_ranking_riesgo():
                 xaxis=dict(range=[0, 100], title="Score (0–100)"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.01,
                             xanchor="left", x=0),
-                margin=dict(t=60, b=40, l=260),
+                margin=dict(t=60, b=40, l=220),
                 height=max(350, len(_agg_uc_f) * 32 + 80),
             )
             st.plotly_chart(fig_uc_rank, use_container_width=True)
@@ -9560,7 +9566,7 @@ def pagina_ranking_riesgo():
 
             _hm_labels = [lbl for lbl, _ in _hm_cols_def]
             _hm_values_raw = _hm_df[[c for _, c in _hm_cols_def]].values.astype(float)
-            _hm_uc_names   = _hm_df["Nombre de la UC"].tolist()
+            _hm_uc_names   = [_trunc(n, 40) for n in _hm_df["Nombre de la UC"].tolist()]
 
             # Normalizar por columna para el color (0–1)
             _hm_col_max = _hm_values_raw.max(axis=0)
@@ -9597,7 +9603,7 @@ def pagina_ranking_riesgo():
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 xaxis=dict(side="top", tickfont=dict(size=10)),
                 yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
-                margin=dict(t=80, b=20, l=260, r=20),
+                margin=dict(t=80, b=20, l=220, r=20),
                 height=max(300, len(_agg_uc_f) * 30 + 100),
             )
             st.plotly_chart(fig_hm, use_container_width=True)
