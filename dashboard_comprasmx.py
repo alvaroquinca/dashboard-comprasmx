@@ -9052,12 +9052,618 @@ def pagina_ranking_riesgo():
         )
 
     st.divider()
-    # ── Ranking de UCs (próximamente) ─────────────────────────
+
+    # ══════════════════════════════════════════════════════════════════
+    # RANKING DE UCS — score compuesto multidimensional (Opción B)
+    # Cálculo independiente sobre `dff` global; filtros propios de sección
+    # ══════════════════════════════════════════════════════════════════
     st.subheader("🏢 Ranking de Unidades Compradoras por Riesgo Compuesto")
-    st.info(
-        "ℹ️ Próximamente: clasificación de UCs según el score acumulado "
-        "de sus contratos."
+    st.caption(
+        "Clasifica las Unidades Compradoras según un score que combina cuatro dimensiones: "
+        "integridad del proveedor (D1), amplitud del riesgo (D2), exposición económica (D3) "
+        "y prácticas anticompetitivas (D4). "
+        "Los filtros de esta sección son independientes del selector de UC del ranking de contratos."
     )
+
+    with st.expander("ℹ️ Metodología — Score compuesto UC", expanded=False):
+        st.markdown(
+            """
+            El score final de cada UC es la suma ponderada de cuatro dimensiones (escala 0–100):
+
+            | Dimensión | Peso | Qué mide |
+            |---|---|---|
+            | **D1 — Integridad del proveedor** | 30 % | Contratos con inhabilitados SABG o EFOS |
+            | **D2 — Amplitud del riesgo** | 25 % | % de contratos con algún indicador de alerta |
+            | **D3 — Exposición económica** | 25 % | % del monto de la UC en contratos con riesgo |
+            | **D4 — Prácticas anticompetitivas** | 20 % | Caso fortuito · HHI · Reciente creación · Zona umbral · Fraccionamiento |
+
+            **D1 — regla de disparo inmediato:** cualquier contrato con SABG inhabilitación vigente o EFOS
+            definitivo eleva D1 = 100 de forma automática (incumplimiento normativo). Para SABG
+            suspendido/historial y EFOS presunto, D1 es proporcional al volumen de contratos afectados
+            (máximo alcanzable sin violación confirmada: 60).
+
+            **D4** combina cinco sub-indicadores en partes iguales:
+            - **Caso fortuito**: % del monto adjudicado bajo esta excepción
+            - **HHI**: concentración de proveedores (Herfindahl-Hirschman normalizado)
+            - **Reciente creación**: % del monto a empresas < 1 año de constitución
+            - **Zona umbral**: % de contratos en 90–100 % del tope legal PEF
+            - **Fraccionamiento**: % de proveedores con ≥ 3 AD a la misma UC
+
+            `Score_UC = 0.30·D1 + 0.25·D2 + 0.25·D3 + 0.20·D4`
+            """
+        )
+
+    # ── Filtros locales (independientes del ranking de contratos) ──
+    _uc_rk2_c1, _uc_rk2_c2, _uc_rk2_c3 = st.columns([2, 1, 1])
+
+    _adsc_opts = ["Todas"]
+    if len(df_dir_uc) > 0 and "Adscripción" in df_dir_uc.columns:
+        _adsc_opts += sorted(df_dir_uc["Adscripción"].dropna().unique().tolist())
+    _adsc_sel_uc = _uc_rk2_c1.selectbox(
+        "🏛️ Adscripción / OOAD", _adsc_opts, key="uc_rk2_adsc"
+    )
+    _top_n_uc  = _uc_rk2_c2.selectbox(
+        "Top N UCs", [10, 20, 50], index=0, key="uc_rk2_topn"
+    )
+    _score_min_uc = _uc_rk2_c3.selectbox(
+        "Score mínimo", [0, 10, 25, 50], index=0, key="uc_rk2_smin",
+        help="Oculta UCs con score menor al umbral seleccionado."
+    )
+
+    # Filtrar dff por adscripción si se eligió una
+    _dff_uc2 = dff.copy()
+    if _adsc_sel_uc != "Todas" and len(df_dir_uc) > 0:
+        _claves_adsc = df_dir_uc.loc[
+            df_dir_uc["Adscripción"] == _adsc_sel_uc, "Clave_UC"
+        ].tolist()
+        _dff_uc2 = _dff_uc2[_dff_uc2["Clave de la UC"].isin(_claves_adsc)]
+
+    if len(_dff_uc2) == 0:
+        st.info("ℹ️ Sin contratos para la selección actual.")
+    else:
+        import re as _re_uc2
+        from datetime import date as _date_uc2
+
+        with st.spinner("Calculando scores de riesgo por UC…"):
+
+            # ── Indicadores externos (cargados una vez) ────────────
+            _sabg_rec_uc = {}
+            try:
+                _df_sabg_uc = cargar_sancionados()
+                for _, _sr in _df_sabg_uc.iterrows():
+                    _ru = str(_sr["RFC"]).strip().upper()
+                    _ini = pd.to_datetime(_sr.get("Inicio inhabilitación"), errors="coerce")
+                    _niv = str(_sr.get("Nivel de Riesgo", ""))
+                    if _ru:
+                        _sabg_rec_uc.setdefault(_ru, []).append((_ini, _niv))
+            except Exception:
+                pass
+
+            _rfcs_edef_uc = set()
+            _rfcs_epres_uc = set()
+            try:
+                _df_efos_uc = cargar_efos()
+                _rfcs_edef_uc  = set(_df_efos_uc[
+                    _df_efos_uc["Situación del contribuyente"] == "Definitivo"]["RFC"])
+                _rfcs_epres_uc = set(_df_efos_uc[
+                    _df_efos_uc["Situación del contribuyente"] == "Presunto"]["RFC"])
+            except Exception:
+                pass
+
+            # ── Flags por contrato (vectorizados) ─────────────────
+            _rfc_n_uc = _dff_uc2["rfc"].astype(str).str.strip().str.upper()
+
+            _ff_uc = pd.to_datetime(
+                _dff_uc2["Fecha de fallo"] if "Fecha de fallo" in _dff_uc2.columns
+                else pd.Series(pd.NaT, index=_dff_uc2.index),
+                dayfirst=True, errors="coerce",
+            )
+            _ffm_uc = pd.to_datetime(
+                _dff_uc2["Fecha de firma del contrato"]
+                if "Fecha de firma del contrato" in _dff_uc2.columns
+                else pd.Series(pd.NaT, index=_dff_uc2.index),
+                dayfirst=True, errors="coerce",
+            )
+            _fref_uc = _ff_uc.combine_first(_ffm_uc)
+
+            # SABG por contrato
+            _fc_uc, _fa_uc, _fm_uc = [], [], []
+            for _ix in _dff_uc2.index:
+                _ru  = _rfc_n_uc.loc[_ix]
+                _fr  = _fref_uc.loc[_ix]
+                if _ru not in _sabg_rec_uc:
+                    _fc_uc.append(False); _fa_uc.append(False); _fm_uc.append(False)
+                    continue
+                if pd.isna(_fr):
+                    _fc_uc.append(False); _fa_uc.append(False); _fm_uc.append(False)
+                    continue
+                _sc2 = _sa2 = _sm2 = _any = False
+                for _ini2, _niv2 in _sabg_rec_uc[_ru]:
+                    if not pd.isna(_ini2) and _fr < _ini2:
+                        continue
+                    _any = True
+                    _nl = _niv2.lower()
+                    if "crítico" in _nl:   _sc2 = True
+                    elif "alto" in _nl:    _sa2 = True
+                    elif "medio" in _nl:   _sm2 = True
+                if not _any:
+                    _fc_uc.append(False); _fa_uc.append(False); _fm_uc.append(False)
+                else:
+                    _fc_uc.append(_sc2)
+                    _fa_uc.append(_sa2 and not _sc2)
+                    _fm_uc.append(_sm2 and not _sc2 and not _sa2)
+
+            _f_sc_uc  = pd.Series(_fc_uc, index=_dff_uc2.index)
+            _f_sa_uc  = pd.Series(_fa_uc, index=_dff_uc2.index)
+            _f_sm_uc  = pd.Series(_fm_uc, index=_dff_uc2.index)
+            _f_ed_uc  = _rfc_n_uc.isin(_rfcs_edef_uc)
+            _f_ep_uc  = _rfc_n_uc.isin(_rfcs_epres_uc)
+
+            # Flag genérico "riesgo D1" para D2/D3
+            _f_crit_uc = _f_sc_uc | _f_ed_uc
+
+            # Zona umbral
+            _f_umb_uc = pd.Series(False, index=_dff_uc2.index)
+            try:
+                _umbs_uc = cargar_umbrales_pef()
+                if _umbs_uc:
+                    _TIPOS_AD_U   = {"Adjudicación Directa", "Adjudicación Directa — Fr. I"}
+                    _TIPOS_I3P_U  = {"Invitación a 3 personas"}
+                    _TIPOS_SERV_U = {"SERVICIOS", "SERVICIOS RELACIONADOS CON LA OBRA", "ARRENDAMIENTOS"}
+                    _mask_u  = _dff_uc2["Tipo Simplificado"].isin(_TIPOS_AD_U | _TIPOS_I3P_U)
+                    _dff_uu  = _dff_uc2[_mask_u].copy()
+                    _dff_uu["_fecha_u"] = pd.to_datetime(
+                        _dff_uu["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
+                    )
+                    _dff_uu["_año_u"] = _dff_uu["_fecha_u"].dt.year
+                    _dff_uu["_ley_u"] = (
+                        _dff_uu["Ley"].astype(str).str.strip().str.upper()
+                        if "Ley" in _dff_uu.columns else "LAASSP"
+                    )
+                    _dff_uu["_cont_u"] = (
+                        _dff_uu["Tipo de contratación"].astype(str).str.strip().str.upper()
+                        if "Tipo de contratación" in _dff_uu.columns else "ADQUISICIONES"
+                    )
+                    _dff_uu["_proc_u"]   = _dff_uu["Tipo Simplificado"]
+                    _dff_uu["_umbral_u"] = float("nan")
+                    for _año_u2, _th_u2 in _umbs_uc.items():
+                        _ma_u2 = _dff_uu["_año_u"] == _año_u2
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LAASSP")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_AD_U),
+                                    "_umbral_u"] = _th_u2["ad_laassp"]
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LAASSP")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_I3P_U),
+                                    "_umbral_u"] = _th_u2["i3p_laassp"]
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LOPSRM")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_AD_U)
+                                    & _dff_uu["_cont_u"].eq("OBRA PÚBLICA"),
+                                    "_umbral_u"] = _th_u2["ad_obra_lopsrm"]
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LOPSRM")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_AD_U)
+                                    & _dff_uu["_cont_u"].isin(_TIPOS_SERV_U),
+                                    "_umbral_u"] = _th_u2["ad_serv_lopsrm"]
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LOPSRM")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_I3P_U)
+                                    & _dff_uu["_cont_u"].eq("OBRA PÚBLICA"),
+                                    "_umbral_u"] = _th_u2["i3p_obra_lopsrm"]
+                        _dff_uu.loc[_ma_u2 & _dff_uu["_ley_u"].eq("LOPSRM")
+                                    & _dff_uu["_proc_u"].isin(_TIPOS_I3P_U)
+                                    & _dff_uu["_cont_u"].isin(_TIPOS_SERV_U),
+                                    "_umbral_u"] = _th_u2["i3p_serv_lopsrm"]
+                    _dff_uu["_pct_u"] = _dff_uu["Importe DRC"] / _dff_uu["_umbral_u"] * 100
+                    _ixs_umb_uc = _dff_uu[
+                        _dff_uu["_umbral_u"].notna()
+                        & (_dff_uu["_pct_u"] >= 90)
+                        & (_dff_uu["_pct_u"] < 100)
+                    ].index
+                    _f_umb_uc.loc[_ixs_umb_uc] = True
+            except Exception:
+                pass
+
+            # Caso fortuito
+            _f_cf_uc = _dff_uc2["Descripción excepción"].astype(str).str.upper().str.contains(
+                "CASO FORTUITO", na=False
+            )
+
+            # Reciente creación
+            _RFC_PAT_UC = _re_uc2.compile(r'^[A-ZÑ&]{3}(\d{2})(\d{2})(\d{2})[A-Z0-9]{3}$')
+
+            def _parse_rfc_uc2(r):
+                m = _RFC_PAT_UC.match(str(r).strip().upper())
+                if not m:
+                    return None
+                yy, mm2, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if not (1 <= mm2 <= 12 and 1 <= dd <= 31):
+                    return None
+                yr = 2000 + yy if yy <= 30 else 1900 + yy
+                try:
+                    return _date_uc2(yr, mm2, dd)
+                except ValueError:
+                    return None
+
+            _fecha_rfc_uc = _dff_uc2["rfc"].map(_parse_rfc_uc2)
+            _fecha_ini_uc = pd.to_datetime(
+                _dff_uc2["Fecha de inicio del contrato"], dayfirst=True, errors="coerce"
+            ).dt.date
+            _edad_uc = pd.Series([
+                (fi - fr).days
+                if fi is not None and fr is not None and not (isinstance(fi, float) and pd.isna(fi))
+                else None
+                for fi, fr in zip(_fecha_ini_uc, _fecha_rfc_uc)
+            ], index=_dff_uc2.index)
+            _f_rc_uc = _edad_uc.apply(lambda x: bool(x is not None and 0 <= x < 365))
+
+            # Flag "algún riesgo" (para D2 / D3)
+            _f_tipo_uc   = _dff_uc2["Tipo Simplificado"]
+            _f_ad_uc     = _f_tipo_uc.isin(
+                {"Adjudicación Directa", "Adjudicación Directa — Fr. I"})
+            _score_base_uc = (
+                _f_sc_uc.astype(int) * 100 +
+                _f_ed_uc.astype(int) * 100 +
+                _f_sa_uc.astype(int) * 60  +
+                _f_ep_uc.astype(int) * 40  +
+                _f_sm_uc.astype(int) * 30  +
+                _f_umb_uc.astype(int) * 45 +
+                _f_rc_uc.astype(int) * 30  +
+                _f_ad_uc.astype(int) * 20
+            )
+            _f_any_riesgo_uc = _score_base_uc > 0
+
+            # ── Agregar por UC ─────────────────────────────────────
+            _uc_col = "Nombre de la UC"
+            _imp    = _dff_uc2["Importe DRC"]
+
+            _uc2 = _dff_uc2.copy()
+            _uc2["_sc"]   = _f_sc_uc
+            _uc2["_ed"]   = _f_ed_uc
+            _uc2["_sa"]   = _f_sa_uc
+            _uc2["_ep"]   = _f_ep_uc
+            _uc2["_sm"]   = _f_sm_uc
+            _uc2["_umb"]  = _f_umb_uc
+            _uc2["_cf"]   = _f_cf_uc
+            _uc2["_rc"]   = _f_rc_uc
+            _uc2["_ad"]   = _f_ad_uc
+            _uc2["_any"]  = _f_any_riesgo_uc
+            _uc2["_imp"]  = _imp
+
+            _g = _uc2.groupby(_uc_col)
+
+            _agg_uc = _g.agg(
+                n_total    =("_imp",  "count"),
+                monto_total=("_imp",  "sum"),
+                n_sc       =("_sc",   "sum"),
+                n_ed       =("_ed",   "sum"),
+                n_sa       =("_sa",   "sum"),
+                n_ep       =("_ep",   "sum"),
+                n_sm       =("_sm",   "sum"),
+                n_umb      =("_umb",  "sum"),
+                n_cf       =("_cf",   "sum"),
+                n_rc       =("_rc",   "sum"),
+                n_ad       =("_ad",   "sum"),
+                n_any      =("_any",  "sum"),
+                monto_any  =("_imp",  lambda s: s[_uc2.loc[s.index, "_any"]].sum()),
+                monto_cf   =("_imp",  lambda s: s[_uc2.loc[s.index, "_cf"]].sum()),
+                monto_rc   =("_imp",  lambda s: s[_uc2.loc[s.index, "_rc"]].sum()),
+            ).reset_index()
+
+            # HHI por UC
+            _shares = (
+                _uc2.groupby([_uc_col, "rfc"])["_imp"].sum()
+                / _uc2.groupby(_uc_col)["_imp"].sum()
+            )
+            _hhi_uc = (_shares ** 2).groupby(level=0).sum() * 10_000
+            _agg_uc = _agg_uc.merge(
+                _hhi_uc.rename("HHI").reset_index(), on=_uc_col, how="left"
+            )
+            _agg_uc["HHI"] = _agg_uc["HHI"].fillna(0)
+
+            # Fraccionamiento: % proveedores AD con ≥ 3 contratos a la misma UC
+            _ad_mask = _uc2["_ad"]
+            _frag_prov = (
+                _uc2[_ad_mask]
+                .groupby([_uc_col, "rfc"])
+                .size()
+                .reset_index(name="_cnt")
+            )
+            _frag_multi = (
+                _frag_prov[_frag_prov["_cnt"] >= 3]
+                .groupby(_uc_col)["rfc"].nunique()
+                .rename("n_prov_frag")
+            )
+            _frag_total = (
+                _frag_prov.groupby(_uc_col)["rfc"].nunique()
+                .rename("n_prov_ad")
+            )
+            _agg_uc = _agg_uc.merge(
+                _frag_multi.reset_index(), on=_uc_col, how="left"
+            ).merge(
+                _frag_total.reset_index(), on=_uc_col, how="left"
+            )
+            _agg_uc["n_prov_frag"] = _agg_uc["n_prov_frag"].fillna(0)
+            _agg_uc["n_prov_ad"]   = _agg_uc["n_prov_ad"].fillna(0)
+
+            # ── Calcular dimensiones ───────────────────────────────
+            _N  = _agg_uc["n_total"].replace(0, pd.NA)
+            _MT = _agg_uc["monto_total"].replace(0, pd.NA)
+
+            # D1 — Integridad
+            _crit_flag = (_agg_uc["n_sc"] + _agg_uc["n_ed"]) > 0
+            _d1_prop = (
+                (_agg_uc["n_sa"] / _N * 60 +
+                 _agg_uc["n_ep"] / _N * 40 +
+                 _agg_uc["n_sm"] / _N * 30)
+                .clip(upper=60)
+                .fillna(0)
+            )
+            _agg_uc["D1"] = _crit_flag.astype(float) * 100 + (~_crit_flag).astype(float) * _d1_prop
+
+            # D2 — Amplitud
+            _agg_uc["D2"] = (_agg_uc["n_any"] / _N * 100).clip(upper=100).fillna(0)
+
+            # D3 — Exposición económica
+            _agg_uc["D3"] = (_agg_uc["monto_any"] / _MT * 100).clip(upper=100).fillna(0)
+
+            # D4 — Prácticas anticompetitivas
+            _sub_cf   = (_agg_uc["monto_cf"] / _MT * 100).clip(upper=100).fillna(0)
+            _sub_hhi  = (_agg_uc["HHI"] / 10_000 * 100).clip(upper=100).fillna(0)
+            _sub_rc   = (_agg_uc["monto_rc"] / _MT * 100).clip(upper=100).fillna(0)
+            _sub_umb  = (_agg_uc["n_umb"] / _N * 100).clip(upper=100).fillna(0)
+            _n_prov_ad_safe = _agg_uc["n_prov_ad"].replace(0, pd.NA)
+            _sub_frag = (_agg_uc["n_prov_frag"] / _n_prov_ad_safe * 100).clip(upper=100).fillna(0)
+            _agg_uc["D4"] = (_sub_cf + _sub_hhi + _sub_rc + _sub_umb + _sub_frag) / 5
+
+            # Score final
+            _agg_uc["Score_UC"] = (
+                0.30 * _agg_uc["D1"] +
+                0.25 * _agg_uc["D2"] +
+                0.25 * _agg_uc["D3"] +
+                0.20 * _agg_uc["D4"]
+            ).round(1)
+
+            # Alerta dominante
+            def _alerta_dom(row):
+                if row["n_sc"] > 0:   return "🔴 SABG inhabilitado"
+                if row["n_ed"] > 0:   return "🔴 EFOS definitivo"
+                if row["n_sa"] > 0:   return "🟠 SABG suspendido"
+                if row["n_ep"] > 0:   return "🟡 EFOS presunto"
+                if row["n_sm"] > 0:   return "🟡 SABG historial"
+                if row["n_cf"] > 0:   return "⚠️ Caso fortuito"
+                if row["HHI"] > 2500: return "⚠️ Alta concentración"
+                if row["n_rc"] > 0:   return "🟡 Reciente creación"
+                if row["n_umb"] > 0:  return "🚦 Zona umbral"
+                if row["n_prov_frag"] > 0: return "⚠️ Fraccionamiento"
+                return "—"
+
+            _agg_uc["Alerta dominante"] = _agg_uc.apply(_alerta_dom, axis=1)
+
+            # Aplicar score mínimo y ordenar
+            _agg_uc_f = (
+                _agg_uc[_agg_uc["Score_UC"] >= _score_min_uc]
+                .sort_values("Score_UC", ascending=False)
+                .head(_top_n_uc)
+                .reset_index(drop=True)
+            )
+            _agg_uc_f.index += 1
+
+        # ── KPIs ──────────────────────────────────────────────────
+        _n_uc_total    = _agg_uc["Nombre de la UC"].nunique()
+        _n_uc_crit     = int(_crit_flag.sum())
+        _n_uc_alto_rk  = int((_agg_uc["Score_UC"] >= 60).sum())
+        _top1_row      = _agg_uc.sort_values("Score_UC", ascending=False).iloc[0] if len(_agg_uc) > 0 else None
+        _top5_monto    = (
+            _agg_uc.sort_values("Score_UC", ascending=False)
+            .head(5)["monto_any"].sum()
+        )
+        _monto_total_g = _agg_uc["monto_any"].sum()
+        _pct_top5      = (_top5_monto / _monto_total_g * 100) if _monto_total_g > 0 else 0
+
+        _kuc1, _kuc2, _kuc3 = st.columns(3)
+        _kuc1.metric(
+            "🔴 UCs con incumplimiento normativo (D1 = 100)",
+            f"{_n_uc_crit:,}",
+            delta=f"de {_n_uc_total} UCs con contratos",
+            delta_color="off",
+        )
+        _kuc2.metric(
+            "⚠️ UCs con Score ≥ 60",
+            f"{_n_uc_alto_rk:,}",
+        )
+        _kuc3.metric(
+            "💰 Concentración top 5 UCs",
+            f"{_pct_top5:.1f}%",
+            delta="del monto en riesgo",
+            delta_color="off",
+        )
+        if _top1_row is not None:
+            st.caption(
+                f"UC con mayor score: **{_top1_row['Nombre de la UC']}** — "
+                f"Score {_top1_row['Score_UC']:.1f} · "
+                f"{_top1_row['Alerta dominante']}"
+            )
+
+        if len(_agg_uc_f) == 0:
+            st.success("✅ No hay UCs con indicadores de riesgo en el umbral seleccionado.")
+        else:
+            # ── Barras apiladas D1/D2/D3/D4 ───────────────────────
+            st.markdown("#### Distribución del score por dimensión")
+            _bar_data = _agg_uc_f[[_uc_col, "D1", "D2", "D3", "D4", "Score_UC"]].copy()
+            _bar_data_m = _bar_data.melt(
+                id_vars=[_uc_col, "Score_UC"],
+                value_vars=["D1", "D2", "D3", "D4"],
+                var_name="Dimensión", value_name="Valor"
+            )
+            _dim_labels = {
+                "D1": "D1 — Integridad",
+                "D2": "D2 — Amplitud",
+                "D3": "D3 — Exposición econ.",
+                "D4": "D4 — Prácticas anticmp.",
+            }
+            _dim_colors = {
+                "D1 — Integridad":          IMSS_ROJO,
+                "D2 — Amplitud":            IMSS_ORO,
+                "D3 — Exposición econ.":    "#E07B00",
+                "D4 — Prácticas anticmp.":  IMSS_GRIS,
+            }
+            _bar_data_m["Dimensión"] = _bar_data_m["Dimensión"].map(_dim_labels)
+            # Ordenar UCs por Score_UC descendente para el gráfico
+            _uc_order_bar = (
+                _bar_data
+                .sort_values("Score_UC", ascending=True)[_uc_col]
+                .tolist()
+            )
+            fig_uc_rank = px.bar(
+                _bar_data_m,
+                x="Valor", y=_uc_col,
+                color="Dimensión",
+                orientation="h",
+                color_discrete_map=_dim_colors,
+                category_orders={_uc_col: _uc_order_bar},
+                labels={"Valor": "Contribución al score", _uc_col: ""},
+                title=f"Top {_top_n_uc} UCs — Score compuesto por dimensión",
+            )
+            fig_uc_rank.update_layout(
+                font=plotly_font(),
+                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                xaxis=dict(range=[0, 100], title="Score (0–100)"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.01,
+                            xanchor="left", x=0),
+                margin=dict(t=60, b=40, l=260),
+                height=max(350, len(_agg_uc_f) * 32 + 80),
+            )
+            st.plotly_chart(fig_uc_rank, use_container_width=True)
+
+            st.divider()
+
+            # ── Heatmap UC × indicadores ───────────────────────────
+            st.markdown("#### Heatmap de indicadores por UC")
+            st.caption(
+                "Color normalizado por columna (blanco = mínimo, rojo = máximo dentro de cada indicador). "
+                "Las celdas muestran el valor bruto."
+            )
+
+            # Construir DataFrame del heatmap
+            _hm_cols_def = [
+                ("SABG\nCrítico",    "n_sc"),
+                ("EFOS\nDefinitivo", "n_ed"),
+                ("SABG\nAlto",       "n_sa"),
+                ("EFOS\nPresunto",   "n_ep"),
+                ("SABG\nHistorial",  "n_sm"),
+                ("Caso\nFortuito",   "n_cf"),
+                ("Reciente\nCreac.", "n_rc"),
+                ("Zona\nUmbral",     "n_umb"),
+                ("Fracc.\nProveed.", "n_prov_frag"),
+                ("% AD",             "n_ad"),
+            ]
+            _hm_df = _agg_uc_f[["Nombre de la UC"] + [c for _, c in _hm_cols_def]].copy()
+            # % AD como porcentaje
+            _hm_df["n_ad"] = (_hm_df["n_ad"] / _agg_uc_f["n_total"] * 100).round(1)
+
+            _hm_labels = [lbl for lbl, _ in _hm_cols_def]
+            _hm_values_raw = _hm_df[[c for _, c in _hm_cols_def]].values.astype(float)
+            _hm_uc_names   = _hm_df["Nombre de la UC"].tolist()
+
+            # Normalizar por columna para el color (0–1)
+            _hm_col_max = _hm_values_raw.max(axis=0)
+            _hm_col_max[_hm_col_max == 0] = 1  # evitar div/0
+            _hm_norm = _hm_values_raw / _hm_col_max
+
+            # Texto de anotación: entero para conteos, decimal para % AD
+            _hm_text = []
+            for _row_i, _row_v in enumerate(_hm_values_raw):
+                _row_txt = []
+                for _col_j, _v in enumerate(_row_v):
+                    if _hm_labels[_col_j] == "% AD":
+                        _row_txt.append(f"{_v:.0f}%")
+                    elif _hm_labels[_col_j] == "Fracc.\nProveed.":
+                        _row_txt.append(f"{int(_v)}" if _v > 0 else "")
+                    else:
+                        _row_txt.append(f"{int(_v)}" if _v > 0 else "")
+                _hm_text.append(_row_txt)
+
+            fig_hm = go.Figure(data=go.Heatmap(
+                z=_hm_norm,
+                x=_hm_labels,
+                y=_hm_uc_names,
+                text=_hm_text,
+                texttemplate="%{text}",
+                textfont=dict(family="Noto Sans, sans-serif", size=11, color="#171B19"),
+                colorscale=[[0, "#FFFFFF"], [0.3, "#F2C0C8"], [0.7, "#C04060"], [1.0, IMSS_ROJO]],
+                showscale=False,
+                hoverongaps=False,
+                hovertemplate="<b>%{y}</b><br>%{x}: %{text}<extra></extra>",
+            ))
+            fig_hm.update_layout(
+                font=plotly_font(),
+                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                xaxis=dict(side="top", tickfont=dict(size=10)),
+                yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+                margin=dict(t=80, b=20, l=260, r=20),
+                height=max(300, len(_agg_uc_f) * 30 + 100),
+            )
+            st.plotly_chart(fig_hm, use_container_width=True)
+
+            st.divider()
+
+            # ── Tabla detallada ────────────────────────────────────
+            st.markdown("#### Tabla detallada por UC")
+            _tbl_uc = _agg_uc_f[[
+                _uc_col, "Score_UC", "D1", "D2", "D3", "D4",
+                "Alerta dominante", "n_total", "n_any", "monto_any"
+            ]].copy()
+            _tbl_uc["D2_fmt"]  = _tbl_uc.apply(
+                lambda r: f"{int(r['n_any'])} de {int(r['n_total'])} ({r['D2']:.0f}%)", axis=1
+            )
+            _tbl_uc["D3_fmt"] = _tbl_uc["monto_any"].apply(
+                lambda x: f"${x/1e6:,.1f} M" if pd.notna(x) else "—"
+            )
+            _tbl_uc["D1"] = _tbl_uc["D1"].round(1)
+            _tbl_uc["D3"] = _tbl_uc["D3"].round(1)
+            _tbl_uc["D4"] = _tbl_uc["D4"].round(1)
+            _tbl_show = _tbl_uc[[
+                _uc_col, "Score_UC", "D1", "D2_fmt", "D3_fmt", "D3", "D4", "Alerta dominante"
+            ]].rename(columns={
+                _uc_col:    "Unidad Compradora",
+                "Score_UC": "Score",
+                "D1":       "D1 Integridad",
+                "D2_fmt":   "D2 Amplitud",
+                "D3_fmt":   "D3 Monto en riesgo",
+                "D3":       "D3 %",
+                "D4":       "D4 Anticmp.",
+                "Alerta dominante": "Alerta principal",
+            })
+            st.dataframe(
+                _tbl_show,
+                column_config={
+                    "Score": st.column_config.ProgressColumn(
+                        "🎯 Score UC",
+                        min_value=0, max_value=100, format="%.1f",
+                    ),
+                    "D1 Integridad": st.column_config.ProgressColumn(
+                        "D1 Integridad", min_value=0, max_value=100, format="%.1f",
+                    ),
+                    "D2 Amplitud":       st.column_config.TextColumn("D2 Amplitud",    width="medium"),
+                    "D3 Monto en riesgo": st.column_config.TextColumn("D3 Monto",       width="small"),
+                    "D3 %": st.column_config.ProgressColumn(
+                        "D3 %", min_value=0, max_value=100, format="%.1f",
+                    ),
+                    "D4 Anticmp.": st.column_config.ProgressColumn(
+                        "D4 Anticmp.", min_value=0, max_value=100, format="%.1f",
+                    ),
+                    "Alerta principal": st.column_config.TextColumn("Alerta principal", width="medium"),
+                },
+                use_container_width=True,
+                height=min(700, 60 + len(_tbl_show) * 55),
+            )
+
+            # Descarga CSV
+            _csv_uc2 = _tbl_show.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 Descargar ranking de UCs (CSV)",
+                data=_csv_uc2,
+                file_name="ranking_uc_riesgo.csv",
+                mime="text/csv",
+                key="dl_uc_ranking",
+            )
 
     st.divider()
 
