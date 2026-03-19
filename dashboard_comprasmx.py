@@ -7396,11 +7396,12 @@ def pagina_empresa():
     st.query_params["empresa"] = _rfc_emp
     st.caption(f"🔗 Enlace directo: copia la URL del navegador para compartir esta ficha.")
 
-    # Todos los contratos de esta empresa (todas las instituciones, año seleccionado)
-    df_emp = df[df["rfc"].str.strip().str.upper() == _rfc_emp].copy()
+    # Todos los contratos de esta empresa (todas las instituciones, todos los años disponibles)
+    df_emp = df_todos[df_todos["rfc"].str.strip().str.upper() == _rfc_emp].copy()
+    _anios_todos_label = ", ".join(sorted(_ARCHIVOS_ANIO.keys()))
 
     st.markdown(f"### 🏭 {_nombre_emp}")
-    st.caption(f"RFC: **{_rfc_emp}** · {len(df_emp):,} contratos en el año seleccionado")
+    st.caption(f"RFC: **{_rfc_emp}** · {len(df_emp):,} contratos en todos los años disponibles ({_anios_todos_label})")
 
     # ── Botón de descarga PDF ──────────────────────────────────
     _n_c_pdf = len(df_emp)
@@ -7420,7 +7421,7 @@ def pagina_empresa():
     }
     try:
         _pdf_bytes = _generar_pdf_empresa(
-            _nombre_emp, _rfc_emp, _kpis_pdf, df_emp, _anios_label
+            _nombre_emp, _rfc_emp, _kpis_pdf, df_emp, _anios_todos_label
         )
         st.download_button(
             label="⬇️ Descargar ficha PDF",
