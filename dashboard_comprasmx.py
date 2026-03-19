@@ -11,7 +11,7 @@ Instrucciones:
 
 import json
 import re as _re
-from datetime import date as _date
+from datetime import date as _date, datetime as _datetime
 from pathlib import Path
 
 import streamlit as st
@@ -9624,6 +9624,433 @@ def pagina_ranking_riesgo():
     st.divider()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# OCDS — Open Contracting Data Standard — helpers y página
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OCDS_PREFIX = "ocds-comprasmx"   # prefijo provisional; no registrado oficialmente
+
+_OCDS_METHOD_MAP = {
+    "Licitación Pública":              "open",
+    "Invitación a 3 personas":         "selective",
+    "Adjudicación Directa":            "limited",
+    "Adjudicación Directa — Fr. I":    "limited",
+    "Adjudicación Directa — Patentes": "limited",
+    "Entre Entes Públicos":            "limited",
+}
+
+_OCDS_CATEGORY_MAP = {
+    "Adquisiciones":                      "goods",
+    "Arrendamientos":                     "services",
+    "Servicios":                          "services",
+    "Obra pública":                       "works",
+    "Servicios relacionados con la obra": "works",
+}
+
+
+def _fmt_date_ocds(val) -> str | None:
+    """DD/MM/YYYY → YYYY-MM-DDT00:00:00Z. Devuelve None si no aplica."""
+    if pd.isna(val) or not str(val).strip():
+        return None
+    try:
+        d = _datetime.strptime(str(val).strip()[:10], "%d/%m/%Y")
+        return d.strftime("%Y-%m-%dT00:00:00Z")
+    except Exception:
+        return None
+
+
+def _build_ocds_release(row: dict) -> dict:
+    """Construye un OCDS Release (tag: award + contract) a partir de una fila de contratos."""
+    num_proc = str(row.get("Número de procedimiento") or "").strip()
+    cod_cont = str(row.get("Código del contrato")     or "").strip()
+    raw_id   = num_proc or cod_cont or str(row.get("_idx", ""))
+    safe_id  = _re.sub(r"[^A-Za-z0-9\-_]", "-", raw_id) if raw_id else f"row-{row.get('_idx','0')}"
+    ocid     = f"{_OCDS_PREFIX}-{safe_id}"
+
+    # ── Partes ──────────────────────────────────────────────────────────────
+    buyer_clave = str(row.get("Clave de la UC")            or "").strip()
+    buyer_name  = str(row.get("Nombre de la UC")           or "").strip()
+    inst_name   = str(row.get("Institución")               or "").strip()
+    sup_rfc     = str(row.get("rfc")                       or "").strip().upper()
+    sup_name    = str(row.get("Proveedor o contratista")   or "").strip()
+
+    parties = []
+    if buyer_clave or buyer_name:
+        parties.append({
+            "id":   f"MX-UC-{buyer_clave}" if buyer_clave else buyer_name,
+            "name": buyer_name,
+            "identifier": {"scheme": "MX-UC", "id": buyer_clave, "legalName": inst_name},
+            "roles": ["buyer", "procuringEntity"],
+        })
+    if sup_rfc or sup_name:
+        sup_party = {
+            "id":   f"MX-RFC-{sup_rfc}" if sup_rfc else sup_name,
+            "name": sup_name,
+            "roles": ["supplier", "tenderer"],
+        }
+        if sup_rfc:
+            sup_party["identifier"] = {"scheme": "MX-RFC", "id": sup_rfc, "legalName": sup_name}
+        parties.append(sup_party)
+
+    # ── Monto ────────────────────────────────────────────────────────────────
+    raw_amount = row.get("Importe DRC")
+    amount     = float(raw_amount) if pd.notna(raw_amount) else None
+    currency   = str(row.get("Moneda") or "MXN").strip()
+    if currency not in ("MXN", "USD", "EUR"):
+        currency = "MXN"
+    value_obj  = {"amount": amount, "currency": currency} if amount is not None else None
+
+    # ── Clasificación CUCoP ──────────────────────────────────────────────────
+    partida = str(row.get("Partida específica") or "").strip().zfill(5)
+    items = []
+    if partida and partida != "00000":
+        items = [{
+            "id": "1",
+            "description": str(row.get("Descripción del contrato") or "").strip(),
+            "classification": {"scheme": "CUCoP", "id": partida},
+        }]
+
+    # ── Método de contratación ───────────────────────────────────────────────
+    tipo_simp = str(row.get("Tipo Simplificado") or row.get("Tipo Procedimiento") or "").strip()
+    method    = _OCDS_METHOD_MAP.get(tipo_simp, "limited")
+    category  = _OCDS_CATEGORY_MAP.get(str(row.get("Tipo de contratación") or ""), "goods")
+
+    # ── Fechas ───────────────────────────────────────────────────────────────
+    d_pub    = _fmt_date_ocds(row.get("Fecha de publicación"))
+    d_fallo  = _fmt_date_ocds(row.get("Fecha de fallo"))
+    d_inicio = _fmt_date_ocds(row.get("Fecha de inicio del contrato"))
+    d_fin    = _fmt_date_ocds(row.get("Fecha de fin del contrato"))
+    d_firma  = _fmt_date_ocds(row.get("Fecha de firma del contrato"))
+    d_release = d_firma or d_fallo or d_pub or _datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+
+    # ── Tender ───────────────────────────────────────────────────────────────
+    tender = {
+        "id":     num_proc or safe_id,
+        "title":  str(row.get("Título del contrato") or row.get("Descripción del contrato") or "").strip(),
+        "description": str(row.get("Descripción del contrato") or "").strip(),
+        "status": "complete",
+        "procurementMethod":       method,
+        "mainProcurementCategory": category,
+        "procuringEntity": {
+            "id":   f"MX-UC-{buyer_clave}" if buyer_clave else buyer_name,
+            "name": buyer_name,
+        },
+    }
+    if value_obj:
+        tender["value"] = value_obj
+    if items:
+        tender["items"] = items
+    exc_art  = str(row.get("Artículo de excepción") or "").strip()
+    exc_desc = str(row.get("Descripción excepción") or "").strip()
+    if exc_art:
+        tender["procurementMethodRationale"] = exc_art
+    if exc_desc:
+        tender["procurementMethodDetails"] = exc_desc
+    if d_pub:
+        tender["tenderPeriod"] = {"startDate": d_pub}
+    if d_fallo:
+        tender["awardPeriod"] = {"endDate": d_fallo}
+    period_t = {}
+    if d_inicio: period_t["startDate"] = d_inicio
+    if d_fin:    period_t["endDate"]   = d_fin
+    if period_t: tender["contractPeriod"] = period_t
+
+    # ── Award ────────────────────────────────────────────────────────────────
+    award_id = f"{ocid}-award-1"
+    award    = {"id": award_id, "status": "active"}
+    if d_fallo:   award["date"]  = d_fallo
+    if value_obj: award["value"] = value_obj
+    if sup_rfc or sup_name:
+        award["suppliers"] = [{
+            "id":   f"MX-RFC-{sup_rfc}" if sup_rfc else sup_name,
+            "name": sup_name,
+        }]
+
+    # ── Contract ─────────────────────────────────────────────────────────────
+    contract_id = cod_cont or f"{ocid}-contract-1"
+    contract = {"id": contract_id, "awardID": award_id, "status": "active"}
+    if value_obj: contract["value"]      = value_obj
+    if d_firma:   contract["dateSigned"] = d_firma
+    period_c = {}
+    if d_inicio: period_c["startDate"] = d_inicio
+    if d_fin:    period_c["endDate"]   = d_fin
+    if period_c: contract["period"] = period_c
+    if items:    contract["items"]  = items
+    url = str(row.get("Dirección del anuncio") or "").strip()
+    if url:
+        contract["documents"] = [{
+            "id": "1",
+            "documentType": "contractSigned",
+            "title": "Publicación en ComprasMX",
+            "url": url,
+            "format": "text/html",
+        }]
+
+    # ── Release ──────────────────────────────────────────────────────────────
+    release = {
+        "ocid":           ocid,
+        "id":             f"{ocid}-release-1",
+        "date":           d_release,
+        "tag":            ["award", "contract"],
+        "initiationType": "tender",
+        "language":       "es",
+    }
+    if parties:
+        release["parties"] = parties
+    if buyer_clave or buyer_name:
+        release["buyer"] = {
+            "id":   f"MX-UC-{buyer_clave}" if buyer_clave else buyer_name,
+            "name": buyer_name,
+        }
+    release["tender"]    = tender
+    release["awards"]    = [award]
+    release["contracts"] = [contract]
+    return release
+
+
+def _build_ocds_package(df_exp: pd.DataFrame, publisher_name: str) -> dict:
+    """Genera un OCDS Release Package completo a partir del DataFrame filtrado."""
+    records  = df_exp.reset_index(drop=True).copy()
+    records["_idx"] = records.index
+    releases = [_build_ocds_release(r) for r in records.to_dict("records")]
+    return {
+        "uri":           "https://comprasmx.buengobierno.gob.mx/ocds/package",
+        "version":       "1.1",
+        "publishedDate": _datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "releases":      releases,
+        "publisher": {
+            "name": publisher_name,
+            "uri":  "https://comprasmx.buengobierno.gob.mx",
+        },
+        "license":           "https://creativecommons.org/licenses/by/4.0/",
+        "publicationPolicy": "https://standard.open-contracting.org/latest/en/",
+    }
+
+
+def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
+    """Genera un DataFrame aplanado con nomenclatura de rutas OCDS para exportar como CSV."""
+    records = df_exp.reset_index(drop=True).copy()
+    records["_idx"] = records.index
+    rows = []
+    for r in records.to_dict("records"):
+        num_proc = str(r.get("Número de procedimiento") or "").strip()
+        cod_cont = str(r.get("Código del contrato")     or "").strip()
+        raw_id   = num_proc or cod_cont or str(r.get("_idx", ""))
+        safe_id  = _re.sub(r"[^A-Za-z0-9\-_]", "-", raw_id) if raw_id else f"row-{r.get('_idx','0')}"
+        ocid     = f"{_OCDS_PREFIX}-{safe_id}"
+        buyer_clave = str(r.get("Clave de la UC")          or "").strip()
+        buyer_name  = str(r.get("Nombre de la UC")         or "").strip()
+        sup_rfc     = str(r.get("rfc")                     or "").strip().upper()
+        sup_name    = str(r.get("Proveedor o contratista") or "").strip()
+        tipo_simp   = str(r.get("Tipo Simplificado") or r.get("Tipo Procedimiento") or "").strip()
+        amount      = r.get("Importe DRC")
+        amount_val  = float(amount) if pd.notna(amount) else ""
+        currency    = str(r.get("Moneda") or "MXN").strip()
+        if currency not in ("MXN", "USD", "EUR"):
+            currency = "MXN"
+        partida = str(r.get("Partida específica") or "").strip().zfill(5)
+        rows.append({
+            "ocid":                                  ocid,
+            "release.id":                            f"{ocid}-release-1",
+            "release.date":                          _fmt_date_ocds(r.get("Fecha de firma del contrato")) or "",
+            "release.tag":                           "award,contract",
+            "release.language":                      "es",
+            "buyer.id":                              f"MX-UC-{buyer_clave}" if buyer_clave else buyer_name,
+            "buyer.name":                            buyer_name,
+            "buyer.identifier.scheme":               "MX-UC",
+            "buyer.identifier.id":                   buyer_clave,
+            "tender.id":                             num_proc,
+            "tender.title":                          str(r.get("Título del contrato") or r.get("Descripción del contrato") or "").strip(),
+            "tender.description":                    str(r.get("Descripción del contrato") or "").strip(),
+            "tender.status":                         "complete",
+            "tender.procurementMethod":              _OCDS_METHOD_MAP.get(tipo_simp, "limited"),
+            "tender.mainProcurementCategory":        _OCDS_CATEGORY_MAP.get(str(r.get("Tipo de contratación") or ""), "goods"),
+            "tender.procurementMethodRationale":     str(r.get("Artículo de excepción")  or "").strip(),
+            "tender.procurementMethodDetails":       str(r.get("Descripción excepción")   or "").strip(),
+            "tender.value.amount":                   amount_val,
+            "tender.value.currency":                 currency,
+            "tender.tenderPeriod.startDate":         _fmt_date_ocds(r.get("Fecha de publicación"))             or "",
+            "tender.awardPeriod.endDate":            _fmt_date_ocds(r.get("Fecha de fallo"))                   or "",
+            "tender.contractPeriod.startDate":       _fmt_date_ocds(r.get("Fecha de inicio del contrato"))     or "",
+            "tender.contractPeriod.endDate":         _fmt_date_ocds(r.get("Fecha de fin del contrato"))        or "",
+            "tender.items[0].classification.scheme": "CUCoP" if partida != "00000" else "",
+            "tender.items[0].classification.id":     partida  if partida != "00000" else "",
+            "award.id":                              f"{ocid}-award-1",
+            "award.date":                            _fmt_date_ocds(r.get("Fecha de fallo")) or "",
+            "award.status":                          "active",
+            "award.value.amount":                    amount_val,
+            "award.value.currency":                  currency,
+            "award.suppliers[0].id":                 f"MX-RFC-{sup_rfc}" if sup_rfc else sup_name,
+            "award.suppliers[0].name":               sup_name,
+            "award.suppliers[0].identifier.scheme":  "MX-RFC" if sup_rfc else "",
+            "award.suppliers[0].identifier.id":      sup_rfc,
+            "contract.id":                           cod_cont,
+            "contract.awardID":                      f"{ocid}-award-1",
+            "contract.status":                       "active",
+            "contract.dateSigned":                   _fmt_date_ocds(r.get("Fecha de firma del contrato")) or "",
+            "contract.period.startDate":             _fmt_date_ocds(r.get("Fecha de inicio del contrato")) or "",
+            "contract.period.endDate":               _fmt_date_ocds(r.get("Fecha de fin del contrato"))    or "",
+            "contract.value.amount":                 amount_val,
+            "contract.value.currency":               currency,
+            "contract.documents[0].url":             str(r.get("Dirección del anuncio") or "").strip(),
+            "contract.documents[0].documentType":    "contractSigned" if str(r.get("Dirección del anuncio") or "").strip() else "",
+        })
+    return pd.DataFrame(rows)
+
+
+def pagina_ocds():
+    st.header("📤 Exportación OCDS — Open Contracting Data Standard")
+    st.markdown(
+        "El **Open Contracting Data Standard (OCDS)** es el estándar internacional de datos abiertos "
+        "para contrataciones públicas, desarrollado por la [Open Contracting Partnership](https://www.open-contracting.org/). "
+        "Permite publicar y reutilizar datos de contrataciones en un formato estructurado y comparable entre países."
+    )
+
+    st.info(
+        "**¿Qué se exporta?** Los contratos actualmente visibles con los filtros del sidebar, "
+        "transformados al esquema OCDS v1.1. Cada contrato se representa como un *Release* con "
+        "etiquetas `award` + `contract`, ya que los datos de ComprasMX corresponden a la etapa "
+        "de adjudicación/firma (no al proceso de licitación completo).",
+        icon="ℹ️",
+    )
+
+    with st.expander("⚠️ Limitaciones y notas técnicas"):
+        st.markdown("""
+**Prefijo OCID provisional**
+El identificador `ocds-comprasmx-` es provisional. Para publicación oficial se requiere registrar
+un prefijo ante la Open Contracting Partnership en
+[standard.open-contracting.org/infrastructure/latest/en/guidance/identifiers/](https://standard.open-contracting.org/infrastructure/latest/en/guidance/identifiers/).
+
+**Cobertura de campos**
+| Disponible | No disponible |
+|---|---|
+| Identificadores RFC (proveedor) | Dirección del proveedor |
+| Monto del contrato (`Importe DRC`) | Número de participantes en la licitación |
+| Tipo de procedimiento → `procurementMethod` | Documentos del proceso (convocatoria, bases) |
+| Clasificación CUCoP → `items[].classification` | Modificaciones contractuales detalladas |
+| Fechas: publicación, fallo, firma, inicio, fin | Precio unitario por ítem |
+| URL del anuncio en ComprasMX | |
+
+**Etapa del proceso**
+Los releases generados cubren únicamente la etapa `award + contract`. No se incluye
+la etapa `tender` previa (publicación de la convocatoria) por no estar disponible en el CSV.
+
+**Identificadores de la UC compradora**
+Se usa el esquema `MX-UC` con la clave interna de la unidad compradora. No existe un scheme
+OCDS registrado oficialmente para las UCs mexicanas.
+        """)
+
+    # ── Métricas del lote a exportar ─────────────────────────────────────────
+    n_contratos  = len(dff)
+    monto_total  = dff["Importe DRC"].sum()
+    n_proveedores = dff["rfc"].nunique()
+    n_ucs         = dff["Nombre de la UC"].nunique()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📄 Contratos a exportar",  f"{n_contratos:,}")
+    c2.metric("💰 Monto total",           f"${monto_total/1e6:,.1f} M MXN")
+    c3.metric("🏢 Unidades compradoras",  f"{n_ucs:,}")
+    c4.metric("🏭 Proveedores únicos",    f"{n_proveedores:,}")
+
+    st.divider()
+
+    # ── Controles de exportación ─────────────────────────────────────────────
+    st.subheader("Generar archivos")
+
+    # Aviso de volumen
+    _CAP_JSON = 5_000
+    if n_contratos > _CAP_JSON:
+        st.warning(
+            f"El lote actual tiene **{n_contratos:,} contratos**. "
+            f"La exportación JSON se limitará a los primeros **{_CAP_JSON:,}** para evitar archivos excesivamente grandes. "
+            f"Aplica más filtros en el sidebar para exportar un subconjunto específico. "
+            f"La exportación CSV no tiene límite.",
+            icon="⚠️",
+        )
+
+    # Nombre del publisher para el paquete
+    inst_label = inst_sel if inst_sel != "Todas" else "APF — Administración Pública Federal"
+    publisher_name = f"DMII-IMSS / {inst_label} — ComprasMX {_anios_label}"
+
+    col_json, col_csv = st.columns(2)
+
+    # ── JSON (OCDS Release Package) ──────────────────────────────────────────
+    with col_json:
+        st.markdown("#### JSON — OCDS Release Package")
+        st.caption(
+            "Formato nativo OCDS. Compatible con validadores como "
+            "[OCDS Kit](https://ocdskit.readthedocs.io/) y [lib-cove-ocds](https://github.com/open-contracting/lib-cove-ocds)."
+        )
+        if st.button("Generar JSON", key="btn_gen_json", use_container_width=True):
+            df_exp = dff.head(_CAP_JSON) if n_contratos > _CAP_JSON else dff
+            with st.spinner(f"Generando paquete OCDS con {len(df_exp):,} releases…"):
+                pkg      = _build_ocds_package(df_exp, publisher_name)
+                indent   = 2 if len(df_exp) <= 1_000 else None
+                json_str = json.dumps(pkg, ensure_ascii=False, indent=indent)
+            fname = f"ocds_comprasmx_{_anios_label.replace(', ','-')}_{len(df_exp)}contratos.json"
+            st.download_button(
+                label=f"⬇️ Descargar JSON ({len(df_exp):,} releases, {len(json_str)/1024:.0f} KB)",
+                data=json_str.encode("utf-8"),
+                file_name=fname,
+                mime="application/json",
+                key="dl_ocds_json",
+                use_container_width=True,
+            )
+
+    # ── CSV aplanado ─────────────────────────────────────────────────────────
+    with col_csv:
+        st.markdown("#### CSV — Campos con nomenclatura OCDS")
+        st.caption(
+            "Versión tabular con columnas nombradas según las rutas OCDS (ej. `tender.procurementMethod`). "
+            "Útil para análisis en Excel, R o Python sin necesidad de parsear JSON."
+        )
+        if st.button("Generar CSV", key="btn_gen_csv", use_container_width=True):
+            with st.spinner(f"Generando CSV con {n_contratos:,} filas…"):
+                df_flat  = _build_ocds_flat_df(dff)
+                csv_flat = df_flat.to_csv(index=False, encoding="utf-8")
+            fname_csv = f"ocds_flat_comprasmx_{_anios_label.replace(', ','-')}_{n_contratos}contratos.csv"
+            st.download_button(
+                label=f"⬇️ Descargar CSV ({n_contratos:,} filas, {len(csv_flat)/1024:.0f} KB)",
+                data=csv_flat.encode("utf-8"),
+                file_name=fname_csv,
+                mime="text/csv",
+                key="dl_ocds_csv",
+                use_container_width=True,
+            )
+
+    st.divider()
+
+    # ── Tabla de mapeo de campos ─────────────────────────────────────────────
+    with st.expander("📋 Mapeo de campos ComprasMX → OCDS"):
+        st.markdown("""
+| Campo ComprasMX | Ruta OCDS | Notas |
+|---|---|---|
+| `Número de procedimiento` | `tender.id` / `ocid` (base) | Se sanitiza para uso como identificador |
+| `Código del contrato` | `contract.id` | |
+| `Institución` | `parties[buyer].identifier.legalName` | |
+| `Nombre de la UC` | `parties[buyer].name` / `tender.procuringEntity.name` | |
+| `Clave de la UC` | `parties[buyer].identifier.id` (scheme: `MX-UC`) | |
+| `rfc` | `parties[supplier].identifier.id` (scheme: `MX-RFC`) | |
+| `Proveedor o contratista` | `parties[supplier].name` | |
+| `Tipo Simplificado` | `tender.procurementMethod` | `open` / `selective` / `limited` |
+| `Artículo de excepción` | `tender.procurementMethodRationale` | Solo AD y excepciones |
+| `Descripción excepción` | `tender.procurementMethodDetails` | |
+| `Tipo de contratación` | `tender.mainProcurementCategory` | `goods` / `services` / `works` |
+| `Importe DRC` | `tender.value.amount` = `award.value.amount` = `contract.value.amount` | |
+| `Moneda` | `*.value.currency` | Default `MXN` |
+| `Partida específica` | `tender.items[0].classification.id` (scheme: `CUCoP`) | |
+| `Fecha de publicación` | `tender.tenderPeriod.startDate` | |
+| `Fecha de fallo` | `tender.awardPeriod.endDate` / `award.date` | |
+| `Fecha de firma del contrato` | `contract.dateSigned` / `release.date` | |
+| `Fecha de inicio del contrato` | `tender.contractPeriod.startDate` / `contract.period.startDate` | |
+| `Fecha de fin del contrato` | `tender.contractPeriod.endDate` / `contract.period.endDate` | |
+| `Dirección del anuncio` | `contract.documents[0].url` | |
+        """)
+
+    st.divider()
+    st.caption(f"División de Monitoreo de la Integridad Institucional – IMSS | ComprasMX {_anios_label}")
+
+
 # NAVEGACIÓN PRINCIPAL (st.navigation)
 # ═══════════════════════════════════════════════════════════════
 pg = st.navigation(
@@ -9644,6 +10071,7 @@ pg = st.navigation(
             st.Page(pagina_expediente,  title="Expediente de Contrato", icon="🔎"),
             st.Page(pagina_empresa,     title="Ficha de la Empresa",    icon="🏭"),
             st.Page(pagina_mapa_riesgo, title="Perfil UC",              icon="🗺️"),
+            st.Page(pagina_ocds,        title="Exportar OCDS",          icon="📤"),
         ],
     }
 )
