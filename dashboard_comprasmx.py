@@ -177,6 +177,22 @@ def cargar_datos(filename):
     return df
 
 @st.cache_data
+def _concat_todos_anios(archivos: tuple) -> pd.DataFrame:
+    """Concatena todos los años disponibles para búsquedas cross-year.
+    Recibe un tuple de (anio, archivo) para ser hashable y cacheable.
+    Reutiliza el caché de cargar_datos — sin releer archivos ya cargados."""
+    dfs = []
+    for anio, archivo in archivos:
+        try:
+            _d = cargar_datos(archivo).copy()
+            _d["Año"] = anio
+            dfs.append(_d)
+        except Exception:
+            pass
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+
+@st.cache_data
 def cargar_cucop():
     df_c = pd.read_excel("cucop_20260301.xlsx", sheet_name="cucop", dtype=str)
     df_c.columns = df_c.columns.str.strip()
@@ -470,6 +486,27 @@ _ucs_sidebar = ["Todas"] + sorted(dff["Nombre de la UC"].dropna().unique().tolis
 uc_sel = st.sidebar.selectbox("🏢 Unidad Compradora", _ucs_sidebar)
 if uc_sel != "Todas":
     dff = dff[dff["Nombre de la UC"] == uc_sel]
+
+# ── Dataset cross-year para Expediente de Contrato y Ficha de Empresa ────────
+# Carga todos los años disponibles (reutiliza caché de cargar_datos).
+# No filtra por año, pero sí respeta institución / UC / excl_consolidadas.
+_df_todos_raw = _concat_todos_anios(tuple(_ARCHIVOS_ANIO.items()))
+df_todos = _df_todos_raw.copy()
+try:
+    df_todos["Nombre de la UC"] = (
+        df_todos["Clave de la UC"].map(_uc_nombre_map).fillna(df_todos["Nombre de la UC"])
+    )
+except NameError:
+    pass   # _uc_nombre_map no existe si df_dir_uc no se cargó
+
+# dff_todos: todos los años con filtros de institución/UC (sin filtro de año ni tipo)
+dff_todos = df_todos
+if inst_sel != "Todas":
+    dff_todos = dff_todos[dff_todos["Institución"] == inst_sel]
+if excl_consolidadas:
+    dff_todos = dff_todos[dff_todos["Compra consolidada"].str.upper().str.strip() != "SI"]
+if uc_sel != "Todas":
+    dff_todos = dff_todos[dff_todos["Nombre de la UC"] == uc_sel]
 
 # ── Última actualización de datos (sidebar) ──
 _META_PATH = Path(__file__).parent / "metadata.json"
@@ -6693,20 +6730,20 @@ def pagina_expediente():
         _q6 = _busqueda_t6.strip().upper()
         if _campo_t6 == "Proveedor / RFC":
             _mask_t6 = (
-                dff["Proveedor o contratista"].str.upper().str.contains(_q6, na=False)
-                | dff["rfc"].str.upper().str.contains(_q6, na=False)
+                dff_todos["Proveedor o contratista"].str.upper().str.contains(_q6, na=False)
+                | dff_todos["rfc"].str.upper().str.contains(_q6, na=False)
             )
         elif _campo_t6 == "Número de procedimiento":
-            _mask_t6 = dff["Número de procedimiento"].str.upper().str.contains(_q6, na=False)
+            _mask_t6 = dff_todos["Número de procedimiento"].str.upper().str.contains(_q6, na=False)
         elif _campo_t6 == "Descripción del contrato":
-            _mask_t6 = dff["Descripción del contrato"].str.upper().str.contains(_q6, na=False)
+            _mask_t6 = dff_todos["Descripción del contrato"].str.upper().str.contains(_q6, na=False)
         elif _campo_t6 == "Código de contrato":
             # Búsqueda exacta por código (único por contrato)
-            _mask_t6 = dff["Código del contrato"].str.strip().str.upper() == _q6
+            _mask_t6 = dff_todos["Código del contrato"].str.strip().str.upper() == _q6
         else:
-            _mask_t6 = dff["Nombre de la UC"].str.upper().str.contains(_q6, na=False)
+            _mask_t6 = dff_todos["Nombre de la UC"].str.upper().str.contains(_q6, na=False)
 
-        _res_t6   = dff[_mask_t6].reset_index(drop=True)
+        _res_t6   = dff_todos[_mask_t6].reset_index(drop=True)
         _n_res_t6 = len(_res_t6)
 
         if _n_res_t6 == 0:
@@ -6724,7 +6761,8 @@ def pagina_expediente():
                 uc    = str(r.get("Nombre de la UC", ""))[:38]
                 imp   = r.get("Importe DRC")
                 imp_s = f"${float(imp)/1e6:.1f} M" if pd.notna(imp) else "N/D"
-                return f"{prov}  ·  {uc}  ·  {imp_s}"
+                anio  = str(r.get("Año", ""))
+                return f"[{anio}]  {prov}  ·  {uc}  ·  {imp_s}"
 
             _labels_t6 = [_fmt_label_t6(_res_t6.iloc[i]) for i in range(_n_res_t6)]
             _idx_t6 = st.selectbox(
@@ -7326,11 +7364,11 @@ def pagina_empresa():
 
     _q_emp = _busqueda_emp.strip().upper()
     _mask_emp = (
-        df["Proveedor o contratista"].str.upper().str.contains(_q_emp, na=False)
-        | df["rfc"].str.upper().str.contains(_q_emp, na=False)
+        df_todos["Proveedor o contratista"].str.upper().str.contains(_q_emp, na=False)
+        | df_todos["rfc"].str.upper().str.contains(_q_emp, na=False)
     )
     _empresas_df = (
-        df[_mask_emp][["Proveedor o contratista", "rfc"]]
+        df_todos[_mask_emp][["Proveedor o contratista", "rfc"]]
         .dropna(subset=["rfc"])
         .drop_duplicates(subset=["rfc"])
         .sort_values("Proveedor o contratista")
