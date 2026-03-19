@@ -9940,8 +9940,7 @@ def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
             "ocid":                                          ocid,
             "id":                                            f"{_OCDS_PREFIX}-rel-{safe_rel}",
             "date":                                          _release_date,
-            "tag/0":                                         "award",
-            "tag/1":                                         "contract",
+            "tag":                                           "award;contract",
             "initiationType":                                "tender",
             "language":                                      "es",
             # ── Comprador ────────────────────────────────────────────────────
