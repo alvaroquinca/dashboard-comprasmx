@@ -9930,10 +9930,14 @@ def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
             currency = "MXN"
         partida = str(r.get("Partida específica") or "").strip().zfill(5)
         _award_id    = f"{_OCDS_PREFIX}-award-{safe_rel}"
+        # date: usa firma → fallo → inicio de contrato → hoy como último fallback.
+        # Un string vacío es tratado como ausente por el validador.
+        _today_iso    = _datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         _release_date = (
             _fmt_date_ocds(r.get("Fecha de firma del contrato"))
             or _fmt_date_ocds(r.get("Fecha de fallo"))
-            or ""
+            or _fmt_date_ocds(r.get("Fecha de inicio del contrato"))
+            or _today_iso
         )
         rows.append({
             # ── Campos de release (nivel raíz, sin prefijo) ──────────────────
@@ -9944,7 +9948,7 @@ def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
             "initiationType":                                "tender",
             "language":                                      "es",
             # ── Comprador ────────────────────────────────────────────────────
-            "buyer/id":                                      f"MX-UC-{buyer_clave}" if buyer_clave else buyer_name,
+            # buyer/id no existe en el esquema OCDS core; usar identifier/id
             "buyer/name":                                    buyer_name,
             "buyer/identifier/scheme":                       "MX-UC",
             "buyer/identifier/id":                           buyer_clave,
@@ -9972,7 +9976,7 @@ def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
             "awards/0/status":                               "active",
             "awards/0/value/amount":                         amount_val,
             "awards/0/value/currency":                       currency,
-            "awards/0/suppliers/0/id":                       f"MX-RFC-{sup_rfc}" if sup_rfc else sup_name,
+            # awards/0/suppliers/0/id no existe en OCDS core; usar identifier/id
             "awards/0/suppliers/0/name":                     sup_name,
             "awards/0/suppliers/0/identifier/scheme":        "MX-RFC" if sup_rfc else "",
             "awards/0/suppliers/0/identifier/id":            sup_rfc,
@@ -9985,6 +9989,7 @@ def _build_ocds_flat_df(df_exp: pd.DataFrame) -> pd.DataFrame:
             "contracts/0/period/endDate":                    _fmt_date_ocds(r.get("Fecha de fin del contrato"))    or "",
             "contracts/0/value/amount":                      amount_val,
             "contracts/0/value/currency":                    currency,
+            "contracts/0/documents/0/id":                    f"{safe_rel}-doc-0",
             "contracts/0/documents/0/url":                   str(r.get("Dirección del anuncio") or "").strip(),
             "contracts/0/documents/0/documentType":          "contractSigned" if str(r.get("Dirección del anuncio") or "").strip() else "",
         })
