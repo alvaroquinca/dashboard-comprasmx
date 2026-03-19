@@ -6661,6 +6661,13 @@ def pagina_expediente():
         "Consulta su ficha detallada y sus indicadores de riesgo individuales."
     )
 
+    # ── Pre-cargar desde query param ?exp=CODIGO_CONTRATO ─────────────────
+    # Solo en la primera carga de la sesión (no sobreescribe búsquedas del usuario)
+    _qp_exp = st.query_params.get("exp", "").strip()
+    if _qp_exp and "busq_expediente_t6" not in st.session_state:
+        st.session_state["busq_expediente_t6"] = _qp_exp
+        st.session_state["campo_busq_exp_t6"]  = "Código de contrato"
+
     # ── Buscador ──────────────────────────────────────────────
     _col_busq6, _col_campo6 = st.columns([4, 2])
     with _col_busq6:
@@ -6672,7 +6679,8 @@ def pagina_expediente():
     with _col_campo6:
         _campo_t6 = st.selectbox(
             "Buscar en",
-            ["Proveedor / RFC", "Número de procedimiento", "Descripción del contrato", "Unidad Compradora"],
+            ["Proveedor / RFC", "Número de procedimiento", "Descripción del contrato",
+             "Unidad Compradora", "Código de contrato"],
             key="campo_busq_exp_t6"
         )
 
@@ -6692,6 +6700,9 @@ def pagina_expediente():
             _mask_t6 = dff["Número de procedimiento"].str.upper().str.contains(_q6, na=False)
         elif _campo_t6 == "Descripción del contrato":
             _mask_t6 = dff["Descripción del contrato"].str.upper().str.contains(_q6, na=False)
+        elif _campo_t6 == "Código de contrato":
+            # Búsqueda exacta por código (único por contrato)
+            _mask_t6 = dff["Código del contrato"].str.strip().str.upper() == _q6
         else:
             _mask_t6 = dff["Nombre de la UC"].str.upper().str.contains(_q6, na=False)
 
@@ -6725,6 +6736,12 @@ def pagina_expediente():
 
             _c      = _res_t6.iloc[_idx_t6]
             _rfc_c6 = str(_c.get("rfc", "")).strip().upper()
+
+            # ── Actualizar query param y mostrar enlace para compartir ─────
+            _cod_c6 = str(_c.get("Código del contrato", "")).strip()
+            if _cod_c6:
+                st.query_params["exp"] = _cod_c6
+                st.caption(f"🔗 Enlace directo: copia la URL del navegador para compartir este expediente.")
 
             st.divider()
 
@@ -7287,6 +7304,11 @@ def pagina_empresa():
         "sus contratos con el IMSS."
     )
 
+    # ── Pre-cargar desde query param ?empresa=RFC ──────────────────────────
+    _qp_emp = st.query_params.get("empresa", "").strip().upper()
+    if _qp_emp and "busq_empresa_pg7" not in st.session_state:
+        st.session_state["busq_empresa_pg7"] = _qp_emp
+
     # ── Buscador ──────────────────────────────────────────────
     _busqueda_emp = st.text_input(
         "Buscar empresa",
@@ -7331,6 +7353,10 @@ def pagina_empresa():
     )
     _rfc_emp    = str(_empresas_df.iloc[_sel_idx]["rfc"]).strip().upper()
     _nombre_emp = _empresas_df.iloc[_sel_idx]["Proveedor o contratista"]
+
+    # ── Actualizar query param y mostrar enlace para compartir ─────────────
+    st.query_params["empresa"] = _rfc_emp
+    st.caption(f"🔗 Enlace directo: copia la URL del navegador para compartir esta ficha.")
 
     # Todos los contratos de esta empresa (todas las instituciones, año seleccionado)
     df_emp = df[df["rfc"].str.strip().str.upper() == _rfc_emp].copy()
