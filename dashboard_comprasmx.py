@@ -2135,25 +2135,32 @@ def pagina_riesgo():
 
         # Top 20 por monto absoluto de caso fortuito
         _top20_cf = _cf_uc.nlargest(20, "Monto_cf").sort_values("Pct_CF")
-        _top20_cf["UC_corta"] = _top20_cf["Nombre de la UC"].apply(
-            lambda s: s[:50] + "…" if len(s) > 50 else s
-        )
         _top20_cf["Pct_fmt"] = _top20_cf["Pct_CF"].apply(lambda x: f"{x:.1f}%")
         _top20_cf["Color"]   = _top20_cf["Pct_CF"].apply(
             lambda x: IMSS_ROJO if x >= 30 else (IMSS_ORO if x >= 15 else IMSS_VERDE)
         )
+        # Orden y etiquetas: nombre completo como clave (sin duplicados), truncado solo para display
+        _cf9_order     = _top20_cf["Nombre de la UC"].tolist()
+        _cf9_ticktext  = [s[:50] + "…" if len(str(s)) > 50 else s for s in _cf9_order]
 
         fig_cf9 = px.bar(
-            _top20_cf, x="Pct_CF", y="UC_corta",
+            _top20_cf, x="Pct_CF", y="Nombre de la UC",
             orientation="h", text="Pct_fmt",
             color="Color",
             color_discrete_map={IMSS_ROJO: IMSS_ROJO, IMSS_ORO: IMSS_ORO, IMSS_VERDE: IMSS_VERDE},
             title="% del gasto por UC que corresponde a caso fortuito (top 20 por monto absoluto)",
+            category_orders={"Nombre de la UC": _cf9_order},
             custom_data=["Nombre de la UC", "Monto_cf", "Monto_uc"]
         )
         fig_cf9.update_layout(
             font=plotly_font(), xaxis_title="% del gasto de la UC",
-            yaxis_title="", showlegend=False,
+            yaxis=dict(
+                title="",
+                tickvals=_cf9_order,
+                ticktext=_cf9_ticktext,
+                tickfont=dict(size=10),
+            ),
+            showlegend=False,
             plot_bgcolor="#ffffff", paper_bgcolor="#ffffff"
         )
         fig_cf9.update_traces(
