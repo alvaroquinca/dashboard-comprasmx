@@ -2717,14 +2717,10 @@ def pagina_dispersion():
     st.header("🔀 Dispersión de Giro Comercial")
 
     # Umbrales
-    _PG_ALTO  = 6   # ≥ 6 partidas genéricas distintas → riesgo alto
-    _PG_MEDIO = 5   # ≥ 5 partidas genéricas distintas → riesgo medio
-    _MIN_CAP  = 2   # mínimo de capítulos distintos
+    _NC_ALTO  = 5   # ≥ 5 conceptos CUCoP distintos → riesgo alto
+    _NC_MEDIO = 4   # ≥ 4 conceptos CUCoP distintos → riesgo medio
     _MIN_CONT = 5   # mínimo de contratos
     _MIN_AÑOS = 2   # activo en al menos 2 años distintos
-    # Capítulos "distribuidor típico": 2000 Materiales y 5000 Bienes muebles.
-    # Se excluyen pares cuya diversidad queda DENTRO de este par (no son sospechosos).
-    _DIST_CAPS = frozenset({"2000", "5000"})
 
     with st.expander("ℹ️ Metodología", expanded=False):
         st.markdown(
@@ -2734,21 +2730,15 @@ def pagina_dispersion():
             contratos en múltiples categorías o fenómenos de testa-ferros.
 
             **Análisis multi-año (2023–2026).** Se agrupa por proveedor y unidad compradora;
-            se cuentan las partidas genéricas CUCoP distintas y los capítulos distintos.
+            se cuentan los **conceptos CUCoP** distintos (nivel intermedio entre Capítulo y
+            Partida Genérica — 39 categorías temáticas).
 
             | Nivel | Criterio |
             |---|---|
-            | 🔴 Riesgo alto  | ≥ {_PG_ALTO} partidas genéricas **y** capítulos "diversos" **y** ≥ {_MIN_AÑOS} años activos |
-            | 🟡 Riesgo medio | ≥ {_PG_MEDIO} partidas genéricas **y** capítulos "diversos" **y** ≥ {_MIN_AÑOS} años activos |
+            | 🔴 Riesgo alto  | ≥ {_NC_ALTO} conceptos distintos **y** ≥ {_MIN_AÑOS} años activos |
+            | 🟡 Riesgo medio | ≥ {_NC_MEDIO} conceptos distintos **y** ≥ {_MIN_AÑOS} años activos |
 
-            Mínimo {_MIN_CONT} contratos · mínimo {_MIN_CAP} capítulos distintos.
-
-            **¿Qué son capítulos "diversos"?** Se excluyen proveedores cuya contratación se
-            concentra *únicamente* en Capítulo 2000 (Materiales y suministros) y/o Capítulo
-            5000 (Bienes muebles e intangibles), que es el perfil normal de un distribuidor.
-            El indicador se activa cuando el proveedor contrata también en servicios (3000),
-            personal (1000), inversión pública (6000) u otras categorías no relacionadas con
-            la venta directa de bienes.
+            Mínimo {_MIN_CONT} contratos.
             """
         )
 
@@ -2770,46 +2760,42 @@ def pagina_dispersion():
         # Join con CUCoP
         _dff_disp = _dff_disp.copy()
         _dff_disp["_pz"] = _dff_disp["Partida específica"].astype(str).str.zfill(5)
-        _ck_disp = df_cucop[["PARTIDA ESPECÍFICA", "PARTIDA GENÉRICA", "DESC. PARTIDA GENÉRICA",
+        _ck_disp = df_cucop[["PARTIDA ESPECÍFICA", "CONCEPTO", "DESC. CONCEPTO",
                               "CAPÍTULO", "DESC. CAPÍTULO"]].copy()
         _ck_disp["_pz"] = _ck_disp["PARTIDA ESPECÍFICA"].astype(str).str.zfill(5)
         _ck_disp = _ck_disp.drop_duplicates("_pz")
         _dff_disp = _dff_disp.merge(
-            _ck_disp[["_pz", "PARTIDA GENÉRICA", "DESC. PARTIDA GENÉRICA", "CAPÍTULO", "DESC. CAPÍTULO"]],
+            _ck_disp[["_pz", "CONCEPTO", "DESC. CONCEPTO", "CAPÍTULO", "DESC. CAPÍTULO"]],
             on="_pz", how="left"
         )
-        _dff_disp = _dff_disp.dropna(subset=["PARTIDA GENÉRICA", "CAPÍTULO"])
+        _dff_disp = _dff_disp.dropna(subset=["CONCEPTO", "CAPÍTULO"])
 
         # Agrupar por (rfc, Proveedor, UC)
         _grp_disp = (
             _dff_disp.groupby(["rfc", "Proveedor o contratista", "Nombre de la UC"])
             .agg(
-                n_pg        =("PARTIDA GENÉRICA",      "nunique"),
-                n_cap       =("CAPÍTULO",               "nunique"),
-                n_años      =("Año",                    "nunique"),
-                n_contratos =("Importe DRC",            "count"),
-                monto       =("Importe DRC",            "sum"),
-                pgs         =("DESC. PARTIDA GENÉRICA", lambda x: "; ".join(sorted(x.dropna().unique().tolist())[:6])),
-                caps        =("DESC. CAPÍTULO",         lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
-                años        =("Año",                    lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
-                _caps_set   =("CAPÍTULO",               lambda x: frozenset(x.dropna().unique())),
+                n_conc      =("CONCEPTO",        "nunique"),
+                n_cap       =("CAPÍTULO",        "nunique"),
+                n_años      =("Año",             "nunique"),
+                n_contratos =("Importe DRC",     "count"),
+                monto       =("Importe DRC",     "sum"),
+                conceptos   =("DESC. CONCEPTO",  lambda x: "; ".join(sorted(x.dropna().unique().tolist())[:6])),
+                caps        =("DESC. CAPÍTULO",  lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
+                años        =("Año",             lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
             )
             .reset_index()
         )
 
-        # Aplicar umbrales refinados
-        # "diverse": excluir pares cuya actividad queda SOLO en {2000 Materiales, 5000 Bienes muebles}
+        # Aplicar umbrales
         _grp_disp = _grp_disp[
             (_grp_disp["n_contratos"] >= _MIN_CONT) &
-            (_grp_disp["n_cap"]       >= _MIN_CAP)  &
             (_grp_disp["n_años"]      >= _MIN_AÑOS) &
-            (_grp_disp["n_pg"]        >= _PG_MEDIO) &
-            (~_grp_disp["_caps_set"].apply(lambda s: s.issubset(_DIST_CAPS)))
+            (_grp_disp["n_conc"]      >= _NC_MEDIO)
         ].copy()
-        _grp_disp["Nivel"] = _grp_disp["n_pg"].apply(
-            lambda p: "🔴 Riesgo alto" if p >= _PG_ALTO else "🟡 Riesgo medio"
+        _grp_disp["Nivel"] = _grp_disp["n_conc"].apply(
+            lambda p: "🔴 Riesgo alto" if p >= _NC_ALTO else "🟡 Riesgo medio"
         )
-        _grp_disp = _grp_disp.sort_values("n_pg", ascending=False).reset_index(drop=True)
+        _grp_disp = _grp_disp.sort_values("n_conc", ascending=False).reset_index(drop=True)
         _grp_disp.index += 1
 
         # KPIs
@@ -2827,7 +2813,7 @@ def pagina_dispersion():
         else:
             _color_disp_map = {"🔴 Riesgo alto": IMSS_ROJO, "🟡 Riesgo medio": IMSS_ORO}
             _custom = ["Proveedor o contratista", "Nombre de la UC", "n_cap",
-                       "n_contratos", "monto", "años", "n_pg", "n_años"]
+                       "n_contratos", "monto", "años", "n_conc", "n_años"]
 
             _top_disp = _grp_disp.head(20).copy()
             _top_disp["_label"] = (
@@ -2844,16 +2830,16 @@ def pagina_dispersion():
 
             with _tab_div:
                 _fig_disp = px.bar(
-                    _top_disp, x="n_pg", y="_label", color="Nivel",
+                    _top_disp, x="n_conc", y="_label", color="Nivel",
                     color_discrete_map=_color_disp_map, orientation="h",
-                    labels={"n_pg": "Partidas genéricas distintas", "_label": ""},
+                    labels={"n_conc": "Conceptos distintos", "_label": ""},
                     custom_data=_custom,
                 )
                 _fig_disp.update_traces(
                     hovertemplate=(
                         "<b>%{customdata[0]}</b><br>"
                         "UC: %{customdata[1]}<br>"
-                        "Partidas genéricas: %{x}<br>"
+                        "Conceptos distintos: %{x}<br>"
                         "Capítulos: %{customdata[2]}<br>"
                         "Años activos: %{customdata[7]}<br>"
                         "Contratos: %{customdata[3]}<br>"
@@ -2864,7 +2850,7 @@ def pagina_dispersion():
                 _fig_disp.update_layout(
                     font=plotly_font(), height=max(320, len(_top_disp) * 28),
                     margin=dict(l=10, r=10, t=10, b=10),
-                    xaxis_title="Partidas genéricas distintas",
+                    xaxis_title="Conceptos distintos",
                     yaxis=dict(autorange="reversed"),
                     legend_title_text="Nivel", showlegend=True,
                 )
@@ -2882,7 +2868,7 @@ def pagina_dispersion():
                         "<b>%{customdata[0]}</b><br>"
                         "UC: %{customdata[1]}<br>"
                         "Monto: $%{customdata[4]:,.0f} MXN<br>"
-                        "Partidas genéricas: %{customdata[6]}<br>"
+                        "Conceptos distintos: %{customdata[6]}<br>"
                         "Capítulos: %{customdata[2]}<br>"
                         "Años activos: %{customdata[7]}<br>"
                         "Contratos: %{customdata[3]}<br>"
@@ -2921,7 +2907,7 @@ def pagina_dispersion():
                 st.markdown(
                     f"**{_prov_disp}** · RFC `{_rfc_disp}` · {_row_disp['Nivel']}  \n"
                     f"UC: {_uc_disp} · "
-                    f"{int(_row_disp['n_pg'])} partidas genéricas · "
+                    f"{int(_row_disp['n_conc'])} conceptos distintos · "
                     f"{int(_row_disp['n_cap'])} capítulos · "
                     f"{int(_row_disp['n_años'])} años activos · "
                     f"{int(_row_disp['n_contratos'])} contratos · "
@@ -2934,7 +2920,7 @@ def pagina_dispersion():
                 ].copy()
                 _cols_det = [c for c in [
                     "Año", "Fecha de inicio del contrato", "Tipo Procedimiento",
-                    "DESC. PARTIDA GENÉRICA", "DESC. CAPÍTULO",
+                    "DESC. CONCEPTO", "DESC. CAPÍTULO",
                     "Descripción del contrato", "Importe DRC", "Dirección del anuncio",
                 ] if c in _det_disp.columns]
                 _det_disp = _det_disp[_cols_det].sort_values(
@@ -2960,12 +2946,12 @@ def pagina_dispersion():
             with st.expander(f"📋 Resumen completo — {len(_grp_disp):,} pares proveedor–UC", expanded=False):
                 _tbl_disp = _grp_disp[[
                     "Nivel", "Proveedor o contratista", "rfc", "Nombre de la UC",
-                    "n_pg", "n_cap", "n_años", "n_contratos", "monto", "pgs", "caps", "años"
+                    "n_conc", "n_cap", "n_años", "n_contratos", "monto", "conceptos", "caps", "años"
                 ]].copy()
                 _tbl_disp = _tbl_disp.rename(columns={
-                    "n_pg": "PG distintas", "n_cap": "Capítulos", "n_años": "Años activos",
+                    "n_conc": "Conceptos distintos", "n_cap": "Capítulos", "n_años": "Años activos",
                     "n_contratos": "Contratos", "monto": "Monto total",
-                    "pgs": "Partidas genéricas", "caps": "Capítulos (desc.)", "años": "Años"
+                    "conceptos": "Conceptos (desc.)", "caps": "Capítulos (desc.)", "años": "Años"
                 })
                 _tbl_disp["Monto total"] = _tbl_disp["Monto total"].apply(
                     lambda x: f"${x:,.0f}" if pd.notna(x) else "—"
