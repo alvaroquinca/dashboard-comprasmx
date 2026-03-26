@@ -2707,6 +2707,146 @@ def pagina_riesgo():
             use_container_width=True, height=420
         )
 
+    # ── SECCIÓN: DISPERSIÓN DE GIRO COMERCIAL ──────────────────────────────────
+    st.divider()
+    st.subheader("🔀 Dispersión de Giro Comercial")
+    with st.expander("ℹ️ Metodología", expanded=False):
+        st.markdown(
+            """
+            Detecta proveedores que han recibido contratos en **rubros presupuestarios sin
+            relación entre sí**, lo que puede indicar empresas genéricas creadas para capturar
+            contratos en múltiples categorías o fenómenos de testa-ferros.
+
+            **Análisis multi-año (2023–2026).** Se agrupa por proveedor y unidad compradora;
+            se cuentan las partidas genéricas CUCoP distintas y los capítulos distintos.
+
+            | Nivel | Criterio |
+            |---|---|
+            | 🔴 Riesgo alto | ≥ 4 partidas genéricas distintas **y** ≥ 2 capítulos distintos |
+            | 🟡 Riesgo medio | ≥ 3 partidas genéricas distintas **y** ≥ 2 capítulos distintos |
+
+            Mínimo: 3 contratos por par proveedor–UC para activar el indicador.
+            """
+        )
+
+    # Aplicar filtro de UC del indicador
+    _dff_disp = dff_todos.copy()
+    if _uc_sel_t2 != "Todas":
+        _dff_disp = _dff_disp[_dff_disp["Nombre de la UC"] == _uc_sel_t2]
+
+    # Verificar que haya partidas
+    if "Partida específica" not in _dff_disp.columns or df_cucop.empty:
+        st.info("Sin datos de CUCoP disponibles para calcular este indicador.")
+    else:
+        # Join con CUCoP
+        _dff_disp = _dff_disp.copy()
+        _dff_disp["_pz"] = _dff_disp["Partida específica"].astype(str).str.zfill(5)
+        _ck_disp = df_cucop[["PARTIDA ESPECÍFICA", "PARTIDA GENÉRICA", "DESC. PARTIDA GENÉRICA",
+                              "CAPÍTULO", "DESC. CAPÍTULO"]].copy()
+        _ck_disp["_pz"] = _ck_disp["PARTIDA ESPECÍFICA"].astype(str).str.zfill(5)
+        _ck_disp = _ck_disp.drop_duplicates("_pz")
+        _dff_disp = _dff_disp.merge(_ck_disp[["_pz","PARTIDA GENÉRICA","DESC. PARTIDA GENÉRICA",
+                                               "CAPÍTULO","DESC. CAPÍTULO"]], on="_pz", how="left")
+        _dff_disp = _dff_disp.dropna(subset=["PARTIDA GENÉRICA","CAPÍTULO"])
+
+        # Agrupar por (rfc, Proveedor, UC)
+        def _first_mode_dash(x):
+            m = x.mode()
+            return m.iloc[0] if len(m) > 0 else "—"
+
+        _grp_disp = (
+            _dff_disp.groupby(["rfc","Proveedor o contratista","Nombre de la UC"])
+            .agg(
+                n_pg        =("PARTIDA GENÉRICA", "nunique"),
+                n_cap       =("CAPÍTULO", "nunique"),
+                n_contratos =("Importe DRC", "count"),
+                monto       =("Importe DRC", "sum"),
+                pgs         =("DESC. PARTIDA GENÉRICA", lambda x: "; ".join(sorted(x.dropna().unique().tolist())[:6])),
+                caps        =("DESC. CAPÍTULO", lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
+                años        =("Año", lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
+            )
+            .reset_index()
+        )
+
+        # Filtrar por umbrales
+        _grp_disp = _grp_disp[
+            (_grp_disp["n_contratos"] >= 3) &
+            (_grp_disp["n_cap"]       >= 2) &
+            (_grp_disp["n_pg"]        >= 3)
+        ].copy()
+        _grp_disp["Nivel"] = _grp_disp["n_pg"].apply(
+            lambda p: "🔴 Riesgo alto" if p >= 4 else "🟡 Riesgo medio"
+        )
+        _grp_disp = _grp_disp.sort_values("n_pg", ascending=False).reset_index(drop=True)
+        _grp_disp.index += 1
+
+        # KPIs
+        _n_alto_disp  = (_grp_disp["Nivel"] == "🔴 Riesgo alto").sum()
+        _n_medio_disp = (_grp_disp["Nivel"] == "🟡 Riesgo medio").sum()
+        _monto_disp   = _grp_disp["monto"].sum()
+
+        _kc1, _kc2, _kc3 = st.columns(3)
+        _kc1.metric("🔴 Riesgo alto",  f"{_n_alto_disp:,}",  "proveedores")
+        _kc2.metric("🟡 Riesgo medio", f"{_n_medio_disp:,}", "proveedores")
+        _kc3.metric("💰 Monto en riesgo", f"${_monto_disp/1e6:,.1f} M MXN")
+
+        if _grp_disp.empty:
+            st.success("✅ Sin proveedores con dispersión de giro atípica en el periodo analizado.")
+        else:
+            # Gráfica: top 20 por n_pg
+            _top_disp = _grp_disp.head(20).copy()
+            _top_disp["_label"] = (
+                _top_disp["Proveedor o contratista"].str[:40]
+                + " / " + _top_disp["Nombre de la UC"].str[:25]
+            )
+            _color_disp_map = {"🔴 Riesgo alto": IMSS_ROJO, "🟡 Riesgo medio": IMSS_ORO}
+            _fig_disp = px.bar(
+                _top_disp,
+                x="n_pg",
+                y="_label",
+                color="Nivel",
+                color_discrete_map=_color_disp_map,
+                orientation="h",
+                labels={"n_pg": "Partidas genéricas distintas", "_label": ""},
+                custom_data=["Proveedor o contratista","Nombre de la UC","n_cap","n_contratos","monto","años"],
+            )
+            _fig_disp.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "UC: %{customdata[1]}<br>"
+                    "Partidas genéricas: %{x}<br>"
+                    "Capítulos: %{customdata[2]}<br>"
+                    "Contratos: %{customdata[3]}<br>"
+                    "Monto: $%{customdata[4]:,.0f}<br>"
+                    "Años: %{customdata[5]}<extra></extra>"
+                )
+            )
+            _fig_disp.update_layout(
+                font=plotly_font(), height=max(300, len(_top_disp) * 28),
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis_title="Partidas genéricas distintas",
+                yaxis=dict(autorange="reversed"),
+                legend_title_text="Nivel",
+                showlegend=True,
+            )
+            st.plotly_chart(_fig_disp, use_container_width=True)
+
+            # Tabla detallada
+            with st.expander(f"📋 Detalle completo — {len(_grp_disp):,} pares proveedor–UC", expanded=False):
+                _tbl_disp = _grp_disp[[
+                    "Nivel","Proveedor o contratista","rfc","Nombre de la UC",
+                    "n_pg","n_cap","n_contratos","monto","pgs","caps","años"
+                ]].copy()
+                _tbl_disp = _tbl_disp.rename(columns={
+                    "n_pg": "PG distintas", "n_cap": "Capítulos",
+                    "n_contratos": "Contratos", "monto": "Monto total",
+                    "pgs": "Partidas genéricas", "caps": "Capítulos (desc.)", "años": "Años"
+                })
+                _tbl_disp["Monto total"] = _tbl_disp["Monto total"].apply(
+                    lambda x: f"${x:,.0f}" if pd.notna(x) else "—"
+                )
+                st.dataframe(_tbl_disp, use_container_width=True, height=400)
+
 # ───────────────────────────────────────────────────────────────
 # PÁGINA 3: PAGINA_EXPLORADOR
 # ───────────────────────────────────────────────────────────────
