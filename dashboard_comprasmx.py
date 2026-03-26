@@ -2717,11 +2717,14 @@ def pagina_dispersion():
     st.header("🔀 Dispersión de Giro Comercial")
 
     # Umbrales
-    _PG_ALTO  = 5   # ≥ 5 partidas genéricas distintas → riesgo alto
-    _PG_MEDIO = 4   # ≥ 4 partidas genéricas distintas → riesgo medio
-    _MIN_CAP  = 3   # mínimo de capítulos distintos
+    _PG_ALTO  = 6   # ≥ 6 partidas genéricas distintas → riesgo alto
+    _PG_MEDIO = 5   # ≥ 5 partidas genéricas distintas → riesgo medio
+    _MIN_CAP  = 2   # mínimo de capítulos distintos
     _MIN_CONT = 5   # mínimo de contratos
     _MIN_AÑOS = 2   # activo en al menos 2 años distintos
+    # Capítulos "distribuidor típico": 2000 Materiales y 5000 Bienes muebles.
+    # Se excluyen pares cuya diversidad queda DENTRO de este par (no son sospechosos).
+    _DIST_CAPS = frozenset({"2000", "5000"})
 
     with st.expander("ℹ️ Metodología", expanded=False):
         st.markdown(
@@ -2735,12 +2738,17 @@ def pagina_dispersion():
 
             | Nivel | Criterio |
             |---|---|
-            | 🔴 Riesgo alto  | ≥ {_PG_ALTO} partidas genéricas **y** ≥ {_MIN_CAP} capítulos **y** ≥ {_MIN_AÑOS} años |
-            | 🟡 Riesgo medio | ≥ {_PG_MEDIO} partidas genéricas **y** ≥ {_MIN_CAP} capítulos **y** ≥ {_MIN_AÑOS} años |
+            | 🔴 Riesgo alto  | ≥ {_PG_ALTO} partidas genéricas **y** capítulos "diversos" **y** ≥ {_MIN_AÑOS} años activos |
+            | 🟡 Riesgo medio | ≥ {_PG_MEDIO} partidas genéricas **y** capítulos "diversos" **y** ≥ {_MIN_AÑOS} años activos |
 
-            Mínimo {_MIN_CONT} contratos por par proveedor–UC para activar el indicador.
-            El requisito de **{_MIN_AÑOS} años activos** evita falsos positivos por variación
-            puntual en un solo ejercicio presupuestal.
+            Mínimo {_MIN_CONT} contratos · mínimo {_MIN_CAP} capítulos distintos.
+
+            **¿Qué son capítulos "diversos"?** Se excluyen proveedores cuya contratación se
+            concentra *únicamente* en Capítulo 2000 (Materiales y suministros) y/o Capítulo
+            5000 (Bienes muebles e intangibles), que es el perfil normal de un distribuidor.
+            El indicador se activa cuando el proveedor contrata también en servicios (3000),
+            personal (1000), inversión pública (6000) u otras categorías no relacionadas con
+            la venta directa de bienes.
             """
         )
 
@@ -2784,16 +2792,19 @@ def pagina_dispersion():
                 pgs         =("DESC. PARTIDA GENÉRICA", lambda x: "; ".join(sorted(x.dropna().unique().tolist())[:6])),
                 caps        =("DESC. CAPÍTULO",         lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
                 años        =("Año",                    lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
+                _caps_set   =("CAPÍTULO",               lambda x: frozenset(x.dropna().unique())),
             )
             .reset_index()
         )
 
         # Aplicar umbrales refinados
+        # "diverse": excluir pares cuya actividad queda SOLO en {2000 Materiales, 5000 Bienes muebles}
         _grp_disp = _grp_disp[
             (_grp_disp["n_contratos"] >= _MIN_CONT) &
             (_grp_disp["n_cap"]       >= _MIN_CAP)  &
             (_grp_disp["n_años"]      >= _MIN_AÑOS) &
-            (_grp_disp["n_pg"]        >= _PG_MEDIO)
+            (_grp_disp["n_pg"]        >= _PG_MEDIO) &
+            (~_grp_disp["_caps_set"].apply(lambda s: s.issubset(_DIST_CAPS)))
         ].copy()
         _grp_disp["Nivel"] = _grp_disp["n_pg"].apply(
             lambda p: "🔴 Riesgo alto" if p >= _PG_ALTO else "🟡 Riesgo medio"
