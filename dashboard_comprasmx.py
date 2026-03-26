@@ -2793,46 +2793,135 @@ def pagina_riesgo():
         if _grp_disp.empty:
             st.success("✅ Sin proveedores con dispersión de giro atípica en el periodo analizado.")
         else:
-            # Gráfica: top 20 por n_pg
+            _color_disp_map = {"🔴 Riesgo alto": IMSS_ROJO, "🟡 Riesgo medio": IMSS_ORO}
             _top_disp = _grp_disp.head(20).copy()
             _top_disp["_label"] = (
-                _top_disp["Proveedor o contratista"].str[:40]
-                + " / " + _top_disp["Nombre de la UC"].str[:25]
+                _top_disp["Proveedor o contratista"].str[:42]
+                + " / " + _top_disp["Nombre de la UC"].str[:28]
             )
-            _color_disp_map = {"🔴 Riesgo alto": IMSS_ROJO, "🟡 Riesgo medio": IMSS_ORO}
-            _fig_disp = px.bar(
-                _top_disp,
-                x="n_pg",
-                y="_label",
-                color="Nivel",
-                color_discrete_map=_color_disp_map,
-                orientation="h",
-                labels={"n_pg": "Partidas genéricas distintas", "_label": ""},
-                custom_data=["Proveedor o contratista","Nombre de la UC","n_cap","n_contratos","monto","años"],
+            _top_disp_monto = _grp_disp.sort_values("monto", ascending=False).head(20).copy()
+            _top_disp_monto["_label"] = (
+                _top_disp_monto["Proveedor o contratista"].str[:42]
+                + " / " + _top_disp_monto["Nombre de la UC"].str[:28]
             )
-            _fig_disp.update_traces(
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b><br>"
-                    "UC: %{customdata[1]}<br>"
-                    "Partidas genéricas: %{x}<br>"
-                    "Capítulos: %{customdata[2]}<br>"
-                    "Contratos: %{customdata[3]}<br>"
-                    "Monto: $%{customdata[4]:,.0f}<br>"
-                    "Años: %{customdata[5]}<extra></extra>"
-                )
-            )
-            _fig_disp.update_layout(
-                font=plotly_font(), height=max(300, len(_top_disp) * 28),
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis_title="Partidas genéricas distintas",
-                yaxis=dict(autorange="reversed"),
-                legend_title_text="Nivel",
-                showlegend=True,
-            )
-            st.plotly_chart(_fig_disp, use_container_width=True)
+            _custom = ["Proveedor o contratista","Nombre de la UC","n_cap","n_contratos","monto","años","n_pg"]
 
-            # Tabla detallada
-            with st.expander(f"📋 Detalle completo — {len(_grp_disp):,} pares proveedor–UC", expanded=False):
+            _tab_div, _tab_monto = st.tabs(["🔢 Por diversidad de giro", "💰 Por monto contratado"])
+
+            with _tab_div:
+                _fig_disp = px.bar(
+                    _top_disp, x="n_pg", y="_label", color="Nivel",
+                    color_discrete_map=_color_disp_map, orientation="h",
+                    labels={"n_pg": "Partidas genéricas distintas", "_label": ""},
+                    custom_data=_custom,
+                )
+                _fig_disp.update_traces(
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "UC: %{customdata[1]}<br>"
+                        "Partidas genéricas: %{x}<br>"
+                        "Capítulos: %{customdata[2]}<br>"
+                        "Contratos: %{customdata[3]}<br>"
+                        "Monto: $%{customdata[4]:,.0f} MXN<br>"
+                        "Años: %{customdata[5]}<extra></extra>"
+                    )
+                )
+                _fig_disp.update_layout(
+                    font=plotly_font(), height=max(320, len(_top_disp) * 28),
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis_title="Partidas genéricas distintas",
+                    yaxis=dict(autorange="reversed"),
+                    legend_title_text="Nivel", showlegend=True,
+                )
+                st.plotly_chart(_fig_disp, use_container_width=True)
+
+            with _tab_monto:
+                _fig_monto = px.bar(
+                    _top_disp_monto, x="monto", y="_label", color="Nivel",
+                    color_discrete_map=_color_disp_map, orientation="h",
+                    labels={"monto": "Monto contratado (MXN)", "_label": ""},
+                    custom_data=_custom,
+                )
+                _fig_monto.update_traces(
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "UC: %{customdata[1]}<br>"
+                        "Monto: $%{customdata[4]:,.0f} MXN<br>"
+                        "Partidas genéricas: %{customdata[6]}<br>"
+                        "Capítulos: %{customdata[2]}<br>"
+                        "Contratos: %{customdata[3]}<br>"
+                        "Años: %{customdata[5]}<extra></extra>"
+                    )
+                )
+                _fig_monto.update_layout(
+                    font=plotly_font(), height=max(320, len(_top_disp_monto) * 28),
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis_title="Monto contratado (MXN)",
+                    xaxis_tickformat="$,.0f",
+                    yaxis=dict(autorange="reversed"),
+                    legend_title_text="Nivel", showlegend=True,
+                )
+                st.plotly_chart(_fig_monto, use_container_width=True)
+
+            # ── Drill-down: contratos individuales del par seleccionado ──────────
+            st.markdown("##### 🔍 Ver contratos de un caso específico")
+            _opciones_disp = [
+                f"{row['Nivel']}  {row['Proveedor o contratista']}  /  {row['Nombre de la UC']}"
+                for _, row in _grp_disp.iterrows()
+            ]
+            _sel_disp = st.selectbox(
+                "Selecciona un proveedor–UC para ver sus contratos:",
+                options=["— Selecciona —"] + _opciones_disp,
+                key="disp_drill_sel",
+            )
+            if _sel_disp != "— Selecciona —":
+                _idx_disp = _opciones_disp.index(_sel_disp)
+                _row_disp = _grp_disp.iloc[_idx_disp]
+                _rfc_disp  = _row_disp["rfc"]
+                _uc_disp   = _row_disp["Nombre de la UC"]
+
+                _det_disp = _dff_disp[
+                    (_dff_disp["rfc"].astype(str).str.strip().str.upper() == str(_rfc_disp).strip().upper()) &
+                    (_dff_disp["Nombre de la UC"].astype(str).str.strip() == str(_uc_disp).strip())
+                ].copy()
+
+                _prov_disp = str(_row_disp["Proveedor o contratista"])
+                st.markdown(
+                    f"**{_prov_disp}** · RFC `{_rfc_disp}` · {_row_disp['Nivel']}  \n"
+                    f"UC: {_uc_disp} · "
+                    f"{int(_row_disp['n_pg'])} partidas genéricas · "
+                    f"{int(_row_disp['n_cap'])} capítulos · "
+                    f"{int(_row_disp['n_contratos'])} contratos · "
+                    f"${_row_disp['monto']/1e6:,.2f} M MXN · "
+                    f"Años: {_row_disp['años']}"
+                )
+
+                _cols_det = [c for c in [
+                    "Año", "Fecha de inicio del contrato", "Tipo Procedimiento",
+                    "DESC. PARTIDA GENÉRICA", "DESC. CAPÍTULO",
+                    "Descripción del contrato", "Importe DRC",
+                    "Dirección del anuncio",
+                ] if c in _det_disp.columns]
+                _det_disp = _det_disp[_cols_det].sort_values(
+                    ["Año", "Fecha de inicio del contrato"], ascending=[False, False]
+                ).reset_index(drop=True)
+                _det_disp.index += 1
+                _det_disp["Importe DRC"] = pd.to_numeric(_det_disp["Importe DRC"], errors="coerce").apply(
+                    lambda x: f"${x:,.2f}" if pd.notna(x) else "—"
+                )
+                st.dataframe(
+                    _det_disp,
+                    use_container_width=True,
+                    height=min(600, 40 + len(_det_disp) * 36),
+                    column_config={
+                        "Dirección del anuncio": st.column_config.LinkColumn(
+                            "🔗 ComprasMX", display_text="Ver contrato"
+                        )
+                    },
+                )
+
+            # Tabla resumen completa
+            with st.expander(f"📋 Resumen completo — {len(_grp_disp):,} pares proveedor–UC", expanded=False):
                 _tbl_disp = _grp_disp[[
                     "Nivel","Proveedor o contratista","rfc","Nombre de la UC",
                     "n_pg","n_cap","n_contratos","monto","pgs","caps","años"
