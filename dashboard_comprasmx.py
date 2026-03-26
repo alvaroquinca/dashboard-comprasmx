@@ -2707,12 +2707,25 @@ def pagina_riesgo():
             use_container_width=True, height=420
         )
 
-    # ── SECCIÓN: DISPERSIÓN DE GIRO COMERCIAL ──────────────────────────────────
-    st.divider()
-    st.subheader("🔀 Dispersión de Giro Comercial")
+    pass  # dispersión de giro → página propia (pagina_dispersion)
+
+# ───────────────────────────────────────────────────────────────
+# PÁGINA: DISPERSIÓN DE GIRO COMERCIAL
+# ───────────────────────────────────────────────────────────────
+def pagina_dispersion():
+
+    st.header("🔀 Dispersión de Giro Comercial")
+
+    # Umbrales
+    _PG_ALTO  = 5   # ≥ 5 partidas genéricas distintas → riesgo alto
+    _PG_MEDIO = 4   # ≥ 4 partidas genéricas distintas → riesgo medio
+    _MIN_CAP  = 3   # mínimo de capítulos distintos
+    _MIN_CONT = 5   # mínimo de contratos
+    _MIN_AÑOS = 2   # activo en al menos 2 años distintos
+
     with st.expander("ℹ️ Metodología", expanded=False):
         st.markdown(
-            """
+            f"""
             Detecta proveedores que han recibido contratos en **rubros presupuestarios sin
             relación entre sí**, lo que puede indicar empresas genéricas creadas para capturar
             contratos en múltiples categorías o fenómenos de testa-ferros.
@@ -2722,19 +2735,27 @@ def pagina_riesgo():
 
             | Nivel | Criterio |
             |---|---|
-            | 🔴 Riesgo alto | ≥ 4 partidas genéricas distintas **y** ≥ 2 capítulos distintos |
-            | 🟡 Riesgo medio | ≥ 3 partidas genéricas distintas **y** ≥ 2 capítulos distintos |
+            | 🔴 Riesgo alto  | ≥ {_PG_ALTO} partidas genéricas **y** ≥ {_MIN_CAP} capítulos **y** ≥ {_MIN_AÑOS} años |
+            | 🟡 Riesgo medio | ≥ {_PG_MEDIO} partidas genéricas **y** ≥ {_MIN_CAP} capítulos **y** ≥ {_MIN_AÑOS} años |
 
-            Mínimo: 3 contratos por par proveedor–UC para activar el indicador.
+            Mínimo {_MIN_CONT} contratos por par proveedor–UC para activar el indicador.
+            El requisito de **{_MIN_AÑOS} años activos** evita falsos positivos por variación
+            puntual en un solo ejercicio presupuestal.
             """
         )
 
-    # Aplicar filtro de UC del indicador
-    _dff_disp = dff_todos.copy()
-    if _uc_sel_t2 != "Todas":
-        _dff_disp = _dff_disp[_dff_disp["Nombre de la UC"] == _uc_sel_t2]
+    # Filtro de UC
+    _ucs_disp = ["Todas"] + sorted(dff_todos["Nombre de la UC"].dropna().unique().tolist())
+    _uc_sel_disp = st.selectbox(
+        "🏢 Filtrar por Unidad Compradora",
+        _ucs_disp,
+        key="uc_filtro_disp",
+    )
 
-    # Verificar que haya partidas
+    _dff_disp = dff_todos.copy()
+    if _uc_sel_disp != "Todas":
+        _dff_disp = _dff_disp[_dff_disp["Nombre de la UC"] == _uc_sel_disp]
+
     if "Partida específica" not in _dff_disp.columns or df_cucop.empty:
         st.info("Sin datos de CUCoP disponibles para calcular este indicador.")
     else:
@@ -2745,37 +2766,37 @@ def pagina_riesgo():
                               "CAPÍTULO", "DESC. CAPÍTULO"]].copy()
         _ck_disp["_pz"] = _ck_disp["PARTIDA ESPECÍFICA"].astype(str).str.zfill(5)
         _ck_disp = _ck_disp.drop_duplicates("_pz")
-        _dff_disp = _dff_disp.merge(_ck_disp[["_pz","PARTIDA GENÉRICA","DESC. PARTIDA GENÉRICA",
-                                               "CAPÍTULO","DESC. CAPÍTULO"]], on="_pz", how="left")
-        _dff_disp = _dff_disp.dropna(subset=["PARTIDA GENÉRICA","CAPÍTULO"])
+        _dff_disp = _dff_disp.merge(
+            _ck_disp[["_pz", "PARTIDA GENÉRICA", "DESC. PARTIDA GENÉRICA", "CAPÍTULO", "DESC. CAPÍTULO"]],
+            on="_pz", how="left"
+        )
+        _dff_disp = _dff_disp.dropna(subset=["PARTIDA GENÉRICA", "CAPÍTULO"])
 
         # Agrupar por (rfc, Proveedor, UC)
-        def _first_mode_dash(x):
-            m = x.mode()
-            return m.iloc[0] if len(m) > 0 else "—"
-
         _grp_disp = (
-            _dff_disp.groupby(["rfc","Proveedor o contratista","Nombre de la UC"])
+            _dff_disp.groupby(["rfc", "Proveedor o contratista", "Nombre de la UC"])
             .agg(
-                n_pg        =("PARTIDA GENÉRICA", "nunique"),
-                n_cap       =("CAPÍTULO", "nunique"),
-                n_contratos =("Importe DRC", "count"),
-                monto       =("Importe DRC", "sum"),
+                n_pg        =("PARTIDA GENÉRICA",      "nunique"),
+                n_cap       =("CAPÍTULO",               "nunique"),
+                n_años      =("Año",                    "nunique"),
+                n_contratos =("Importe DRC",            "count"),
+                monto       =("Importe DRC",            "sum"),
                 pgs         =("DESC. PARTIDA GENÉRICA", lambda x: "; ".join(sorted(x.dropna().unique().tolist())[:6])),
-                caps        =("DESC. CAPÍTULO", lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
-                años        =("Año", lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
+                caps        =("DESC. CAPÍTULO",         lambda x: "; ".join(sorted(x.dropna().unique().tolist()))),
+                años        =("Año",                    lambda x: ", ".join(sorted(x.dropna().astype(str).unique().tolist()))),
             )
             .reset_index()
         )
 
-        # Filtrar por umbrales
+        # Aplicar umbrales refinados
         _grp_disp = _grp_disp[
-            (_grp_disp["n_contratos"] >= 3) &
-            (_grp_disp["n_cap"]       >= 2) &
-            (_grp_disp["n_pg"]        >= 3)
+            (_grp_disp["n_contratos"] >= _MIN_CONT) &
+            (_grp_disp["n_cap"]       >= _MIN_CAP)  &
+            (_grp_disp["n_años"]      >= _MIN_AÑOS) &
+            (_grp_disp["n_pg"]        >= _PG_MEDIO)
         ].copy()
         _grp_disp["Nivel"] = _grp_disp["n_pg"].apply(
-            lambda p: "🔴 Riesgo alto" if p >= 4 else "🟡 Riesgo medio"
+            lambda p: "🔴 Riesgo alto" if p >= _PG_ALTO else "🟡 Riesgo medio"
         )
         _grp_disp = _grp_disp.sort_values("n_pg", ascending=False).reset_index(drop=True)
         _grp_disp.index += 1
@@ -2786,14 +2807,17 @@ def pagina_riesgo():
         _monto_disp   = _grp_disp["monto"].sum()
 
         _kc1, _kc2, _kc3 = st.columns(3)
-        _kc1.metric("🔴 Riesgo alto",  f"{_n_alto_disp:,}",  "proveedores")
-        _kc2.metric("🟡 Riesgo medio", f"{_n_medio_disp:,}", "proveedores")
+        _kc1.metric("🔴 Riesgo alto",     f"{_n_alto_disp:,}",  "proveedores")
+        _kc2.metric("🟡 Riesgo medio",    f"{_n_medio_disp:,}", "proveedores")
         _kc3.metric("💰 Monto en riesgo", f"${_monto_disp/1e6:,.1f} M MXN")
 
         if _grp_disp.empty:
-            st.success("✅ Sin proveedores con dispersión de giro atípica en el periodo analizado.")
+            st.success("✅ Sin proveedores con dispersión de giro atípica bajo los criterios actuales.")
         else:
             _color_disp_map = {"🔴 Riesgo alto": IMSS_ROJO, "🟡 Riesgo medio": IMSS_ORO}
+            _custom = ["Proveedor o contratista", "Nombre de la UC", "n_cap",
+                       "n_contratos", "monto", "años", "n_pg", "n_años"]
+
             _top_disp = _grp_disp.head(20).copy()
             _top_disp["_label"] = (
                 _top_disp["Proveedor o contratista"].str[:42]
@@ -2804,7 +2828,6 @@ def pagina_riesgo():
                 _top_disp_monto["Proveedor o contratista"].str[:42]
                 + " / " + _top_disp_monto["Nombre de la UC"].str[:28]
             )
-            _custom = ["Proveedor o contratista","Nombre de la UC","n_cap","n_contratos","monto","años","n_pg"]
 
             _tab_div, _tab_monto = st.tabs(["🔢 Por diversidad de giro", "💰 Por monto contratado"])
 
@@ -2821,6 +2844,7 @@ def pagina_riesgo():
                         "UC: %{customdata[1]}<br>"
                         "Partidas genéricas: %{x}<br>"
                         "Capítulos: %{customdata[2]}<br>"
+                        "Años activos: %{customdata[7]}<br>"
                         "Contratos: %{customdata[3]}<br>"
                         "Monto: $%{customdata[4]:,.0f} MXN<br>"
                         "Años: %{customdata[5]}<extra></extra>"
@@ -2849,6 +2873,7 @@ def pagina_riesgo():
                         "Monto: $%{customdata[4]:,.0f} MXN<br>"
                         "Partidas genéricas: %{customdata[6]}<br>"
                         "Capítulos: %{customdata[2]}<br>"
+                        "Años activos: %{customdata[7]}<br>"
                         "Contratos: %{customdata[3]}<br>"
                         "Años: %{customdata[5]}<extra></extra>"
                     )
@@ -2863,7 +2888,8 @@ def pagina_riesgo():
                 )
                 st.plotly_chart(_fig_monto, use_container_width=True)
 
-            # ── Drill-down: contratos individuales del par seleccionado ──────────
+            # ── Drill-down: contratos individuales ────────────────────────────────
+            st.divider()
             st.markdown("##### 🔍 Ver contratos de un caso específico")
             _opciones_disp = [
                 f"{row['Nivel']}  {row['Proveedor o contratista']}  /  {row['Nombre de la UC']}"
@@ -2875,32 +2901,30 @@ def pagina_riesgo():
                 key="disp_drill_sel",
             )
             if _sel_disp != "— Selecciona —":
-                _idx_disp = _opciones_disp.index(_sel_disp)
-                _row_disp = _grp_disp.iloc[_idx_disp]
-                _rfc_disp  = _row_disp["rfc"]
-                _uc_disp   = _row_disp["Nombre de la UC"]
+                _idx_disp   = _opciones_disp.index(_sel_disp)
+                _row_disp   = _grp_disp.iloc[_idx_disp]
+                _rfc_disp   = _row_disp["rfc"]
+                _uc_disp    = _row_disp["Nombre de la UC"]
+                _prov_disp  = str(_row_disp["Proveedor o contratista"])
 
-                _det_disp = _dff_disp[
-                    (_dff_disp["rfc"].astype(str).str.strip().str.upper() == str(_rfc_disp).strip().upper()) &
-                    (_dff_disp["Nombre de la UC"].astype(str).str.strip() == str(_uc_disp).strip())
-                ].copy()
-
-                _prov_disp = str(_row_disp["Proveedor o contratista"])
                 st.markdown(
                     f"**{_prov_disp}** · RFC `{_rfc_disp}` · {_row_disp['Nivel']}  \n"
                     f"UC: {_uc_disp} · "
                     f"{int(_row_disp['n_pg'])} partidas genéricas · "
                     f"{int(_row_disp['n_cap'])} capítulos · "
+                    f"{int(_row_disp['n_años'])} años activos · "
                     f"{int(_row_disp['n_contratos'])} contratos · "
-                    f"${_row_disp['monto']/1e6:,.2f} M MXN · "
-                    f"Años: {_row_disp['años']}"
+                    f"${_row_disp['monto']/1e6:,.2f} M MXN"
                 )
 
+                _det_disp = _dff_disp[
+                    (_dff_disp["rfc"].astype(str).str.strip().str.upper() == str(_rfc_disp).strip().upper()) &
+                    (_dff_disp["Nombre de la UC"].astype(str).str.strip() == str(_uc_disp).strip())
+                ].copy()
                 _cols_det = [c for c in [
                     "Año", "Fecha de inicio del contrato", "Tipo Procedimiento",
                     "DESC. PARTIDA GENÉRICA", "DESC. CAPÍTULO",
-                    "Descripción del contrato", "Importe DRC",
-                    "Dirección del anuncio",
+                    "Descripción del contrato", "Importe DRC", "Dirección del anuncio",
                 ] if c in _det_disp.columns]
                 _det_disp = _det_disp[_cols_det].sort_values(
                     ["Año", "Fecha de inicio del contrato"], ascending=[False, False]
@@ -2921,13 +2945,14 @@ def pagina_riesgo():
                 )
 
             # Tabla resumen completa
+            st.divider()
             with st.expander(f"📋 Resumen completo — {len(_grp_disp):,} pares proveedor–UC", expanded=False):
                 _tbl_disp = _grp_disp[[
-                    "Nivel","Proveedor o contratista","rfc","Nombre de la UC",
-                    "n_pg","n_cap","n_contratos","monto","pgs","caps","años"
+                    "Nivel", "Proveedor o contratista", "rfc", "Nombre de la UC",
+                    "n_pg", "n_cap", "n_años", "n_contratos", "monto", "pgs", "caps", "años"
                 ]].copy()
                 _tbl_disp = _tbl_disp.rename(columns={
-                    "n_pg": "PG distintas", "n_cap": "Capítulos",
+                    "n_pg": "PG distintas", "n_cap": "Capítulos", "n_años": "Años activos",
                     "n_contratos": "Contratos", "monto": "Monto total",
                     "pgs": "Partidas genéricas", "caps": "Capítulos (desc.)", "años": "Años"
                 })
@@ -2935,6 +2960,7 @@ def pagina_riesgo():
                     lambda x: f"${x:,.0f}" if pd.notna(x) else "—"
                 )
                 st.dataframe(_tbl_disp, use_container_width=True, height=400)
+
 
 # ───────────────────────────────────────────────────────────────
 # PÁGINA 3: PAGINA_EXPLORADOR
@@ -10391,6 +10417,7 @@ pg = st.navigation(
             st.Page(pagina_riesgo,           title="Indicadores de Riesgo",    icon="🚨"),
             st.Page(pagina_ranking_riesgo,   title="Ranking de Riesgo",        icon="🏆"),
             st.Page(pagina_fragmentacion,    title="Fragmentación",             icon="🧩"),
+            st.Page(pagina_dispersion,       title="Dispersión de Giro",        icon="🔀"),
             st.Page(pagina_colusion,       title="Simulación de Competencia", icon="🕸️"),
             st.Page(pagina_precios,        title="Analítica de Precios",     icon="💊"),
         ],
