@@ -5242,12 +5242,20 @@ def pagina_mapa_riesgo():
         if not _opts_mr:
             st.info("\u2139\ufe0f Sin Adscripciones disponibles.")
             return
-        _sel_mr   = _s2.selectbox("Seleccionar Adscripci\u00f3n:", _opts_mr, key="mr_adsc_sel")
-        _dff_sel  = _dff_base_mr[_dff_base_mr["Adscripci\u00f3n"] == _sel_mr].copy()
-        _label_mr  = _sel_mr
+        _sel_mr = _s2.multiselect(
+            "Seleccionar Adscripci\u00f3n (una o m\u00e1s):",
+            _opts_mr,
+            default=[_opts_mr[0]],
+            key="mr_adsc_sel"
+        )
+        if not _sel_mr:
+            st.info("\u2139\ufe0f Selecciona al menos una Adscripci\u00f3n.")
+            return
+        _dff_sel  = _dff_base_mr[_dff_base_mr["Adscripci\u00f3n"].isin(_sel_mr)].copy()
+        _label_mr  = ", ".join(_sel_mr) if len(_sel_mr) <= 2 else f"{len(_sel_mr)} adscripciones seleccionadas"
         _n_ucs_sel = _dff_sel["Nombre de la UC"].nunique()
         _meta_tipo_mr = None
-        _meta_adsc_mr = _sel_mr
+        _meta_adsc_mr = ", ".join(_sel_mr)
 
     if len(_dff_sel) == 0:
         st.info("\u2139\ufe0f Sin contratos para la selecci\u00f3n actual.")
@@ -5320,8 +5328,9 @@ def pagina_mapa_riesgo():
     # ─────────────────────────────────────────────────────────────────────
     # PDF Export — button (top; generation triggered at end of section)
     # ─────────────────────────────────────────────────────────────────────
-    _pdf_state_key = f"pdf_bytes_mr_{str(_sel_mr)[:30]}"
-    _pdf_flag_key  = f"pdf_flag_mr_{str(_sel_mr)[:30]}"
+    _pdf_key_base  = _sel_mr if isinstance(_sel_mr, str) else "_".join(sorted(_sel_mr))
+    _pdf_state_key = f"pdf_bytes_mr_{_pdf_key_base[:40]}"
+    _pdf_flag_key  = f"pdf_flag_mr_{_pdf_key_base[:40]}"
     _c_pdf1, _c_pdf2 = st.columns([1, 3])
     if _c_pdf1.button(
         "\U0001f4c4 Generar PDF del Perfil UC",
