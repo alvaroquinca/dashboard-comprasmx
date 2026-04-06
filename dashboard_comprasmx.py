@@ -5440,29 +5440,34 @@ def pagina_mapa_riesgo():
     _prov_mr = _prov_mr.sort_values("Importe DRC", ascending=True)
     _prov_mr["Monto_fmt"] = _prov_mr["Importe DRC"].apply(lambda x: f"${x/1e6:,.1f} M")
 
-    _fig_pB = px.treemap(
+    _fig_pB = px.bar(
         _prov_mr,
-        path=["Prov_c"],
-        values="Importe DRC",
+        x="Importe DRC",
+        y="Prov_c",
+        orientation="h",
         color="Share_mr",
         color_continuous_scale=[[0, IMSS_VERDE_OSC], [0.5, IMSS_VERDE], [1, IMSS_ORO_CLARO]],
         range_color=[0, 100],
+        text="Monto_fmt",
         custom_data=["Proveedor o contratista", "rfc", "Share_fmt", "Monto_fmt"],
     )
     _fig_pB.update_traces(
-        texttemplate="<b>%{label}</b><br>%{customdata[3]}<br>%{customdata[2]}",
+        textposition="outside",
+        textfont=dict(family="Noto Sans, sans-serif", size=11),
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "RFC: %{customdata[1]}<br>"
             "% de la UC: %{customdata[2]}<br>"
             "Monto: %{customdata[3]}<extra></extra>"
         ),
-        textfont=dict(family="Noto Sans, sans-serif", size=12),
     )
+    _prov_h = max(320, len(_prov_mr) * 34 + 80)
     _fig_pB.update_layout(
         font=plotly_font(),
-        height=460,
-        margin=dict(l=10, r=10, t=20, b=10),
+        height=_prov_h,
+        margin=dict(l=10, r=120, t=20, b=10),
+        xaxis=dict(title="Monto (MXN)", tickprefix="$", tickformat=",.0f"),
+        yaxis=dict(title="", automargin=True),
         coloraxis_colorbar=dict(title="% del total<br>de la UC", ticksuffix="%"),
     )
     st.plotly_chart(_fig_pB, use_container_width=True)
@@ -5527,24 +5532,29 @@ def pagina_mapa_riesgo():
         _gasto_mr = _gasto_mr.sort_values("Monto", ascending=True)
 
         if len(_gasto_mr) > 0:
-            _gasto_mr["Monto_fmt"] = _gasto_mr["Monto"].apply(lambda v: f"${v/1e6:.1f} M")
-            _fig_pC = px.treemap(
+            _gasto_mr["Monto_fmt"] = _gasto_mr["Monto"].apply(lambda v: f"${v/1e6:,.1f} M")
+            _fig_pC = px.bar(
                 _gasto_mr,
-                path=["Etq_c"],
-                values="Monto",
+                x="Monto",
+                y="Etq_c",
+                orientation="h",
                 color="Monto",
                 color_continuous_scale=[[0, IMSS_VERDE_OSC], [1, IMSS_VERDE]],
+                text="Monto_fmt",
                 custom_data=["Partida", "Monto_fmt"],
             )
             _fig_pC.update_traces(
-                texttemplate="<b>%{label}</b><br>%{customdata[1]}",
+                textposition="outside",
+                textfont=dict(family="Noto Sans, sans-serif", size=11),
                 hovertemplate="<b>%{customdata[0]}</b><br>Monto: %{customdata[1]}<extra></extra>",
-                textfont=dict(family="Noto Sans, sans-serif", size=12),
             )
+            _cucop_h = max(320, len(_gasto_mr) * 34 + 80)
             _fig_pC.update_layout(
                 font=plotly_font(),
-                height=460,
-                margin=dict(l=10, r=10, t=20, b=10),
+                height=_cucop_h,
+                margin=dict(l=10, r=120, t=20, b=10),
+                xaxis=dict(title="Monto (MXN)", tickprefix="$", tickformat=",.0f"),
+                yaxis=dict(title="", automargin=True),
                 coloraxis_showscale=False,
             )
             st.plotly_chart(_fig_pC, use_container_width=True)
