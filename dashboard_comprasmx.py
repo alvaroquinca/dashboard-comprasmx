@@ -5836,11 +5836,13 @@ def pagina_mapa_riesgo():
             _dff_sel["Descripci\u00f3n excepci\u00f3n"].notna()
             & _dff_sel["Descripci\u00f3n excepci\u00f3n"].astype(str).str.strip().ne("")
         )
-        _pct_exc_mr = _mask_exc_mr.mean() * 100
+        _monto_total_mr  = _dff_sel["Importe DRC"].sum()
+        _monto_exc_mr    = _dff_sel.loc[_mask_exc_mr, "Importe DRC"].sum()
+        _pct_exc_mr = (_monto_exc_mr / _monto_total_mr * 100) if _monto_total_mr > 0 else 0
         if _pct_exc_mr > 30:
             _riesgos_activos.append(("exc_alto", _pct_exc_mr))
         else:
-            _riesgos_limpios.append(f"Excepci\u00f3n Art. 55 ({_pct_exc_mr:.1f}% < 30%)")
+            _riesgos_limpios.append(f"Excepci\u00f3n Art. 55 ({_pct_exc_mr:.1f}% del monto < 30%)")
     else:
         _riesgos_limpios.append("Excepci\u00f3n Art. 55")
 
@@ -6283,12 +6285,12 @@ def pagina_mapa_riesgo():
 
         elif _tr == "exc_alto":
             with st.expander(
-                f"\u26a0\ufe0f Alto uso de excepciones (Art. 55 LAASSP) \u2014 {_dr:.1f}% de los contratos"
+                f"\u26a0\ufe0f Alto uso de excepciones (Art. 55 LAASSP) \u2014 {_dr:.1f}% del monto contratado"
             ):
                 st.warning(
-                    f"El **{_dr:.1f}%** de los contratos se tramitaron mediante alguna excepci\u00f3n "
+                    f"El **{_dr:.1f}%** del monto contratado se tramit\u00f3 mediante alguna excepci\u00f3n "
                     f"a la licitaci\u00f3n p\u00fablica (Art. 55 LAASSP / Art. 42 anterior). "
-                    f"El umbral de alerta es **30 %**."
+                    f"El umbral de alerta es **30 %** del presupuesto de adquisiciones."
                 )
 
     # \u2500\u2500 Lista compacta de indicadores sin hallazgos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
