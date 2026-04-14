@@ -5394,7 +5394,7 @@ def pagina_mapa_riesgo():
         "\U0001f4c4 Generar PDF del Perfil UC",
         use_container_width=True,
         key="btn_gen_pdf_mr",
-        help="Genera un PDF A4 horizontal con numeralia y visualizaciones",
+        help="Genera un PDF carta vertical con numeralia y visualizaciones",
     ):
         st.session_state[_pdf_flag_key] = True
         st.session_state.pop(_pdf_state_key, None)
@@ -5931,20 +5931,29 @@ def pagina_mapa_riesgo():
                           .replace('\u2019', "'"))
                     return t.encode('latin-1', errors='replace').decode('latin-1')
 
-                _pdf_obj = _FPDF_MR(orientation="L", unit="mm", format="A4")
-                _pdf_obj.set_auto_page_break(auto=True, margin=12)
-                _pdf_obj.set_margins(12, 12, 12)
+                # ── Carta vertical, márgenes 15 mm ──────────────────────
+                _pdf_obj = _FPDF_MR(orientation="P", unit="mm", format="letter")
+                _pdf_obj.set_auto_page_break(auto=True, margin=15)
+                _pdf_obj.set_margins(15, 15, 15)
                 _pdf_obj.add_page()
+                _epw = _pdf_obj.epw   # ancho útil ≈ 185.9 mm
 
-                # ── Header ──
-                _pdf_obj.set_font("Helvetica", "B", 15)
+                def _hr(color=(200, 200, 200), lw=0.2, gap_before=1, gap_after=4):
+                    _pdf_obj.set_draw_color(*color)
+                    _pdf_obj.set_line_width(lw)
+                    _pdf_obj.ln(gap_before)
+                    _pdf_obj.line(15, _pdf_obj.get_y(), 15 + _epw, _pdf_obj.get_y())
+                    _pdf_obj.ln(gap_after)
+
+                # ── Header ──────────────────────────────────────────────
+                _pdf_obj.set_font("Helvetica", "B", 14)
                 _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(
-                    0, 10, _s(f"Perfil UC -- {str(_label_mr)[:75]}"),
+                _pdf_obj.multi_cell(
+                    0, 8, _s(f"Perfil UC -- {str(_label_mr)[:80]}"),
                     new_x="LMARGIN", new_y="NEXT",
                 )
                 _pdf_obj.set_font("Helvetica", "", 9)
-                _pdf_obj.set_text_color(23, 27, 25)
+                _pdf_obj.set_text_color(134, 134, 136)
                 if _tipo_vista_mr == "UC espec\u00edfica":
                     _pdf_meta_str = _s(
                         f"Tipo UC: {_meta_tipo_mr or '--'}   |   "
@@ -5952,16 +5961,12 @@ def pagina_mapa_riesgo():
                     )
                 else:
                     _pdf_meta_str = _s(f"Adscripcion: {_meta_adsc_mr}")
-                _pdf_obj.cell(0, 6, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.ln(3)
+                _pdf_obj.cell(0, 5, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
+                _hr(color=(11, 84, 69), lw=0.4, gap_before=2, gap_after=5)
 
-                # ── KPIs ──
-                _pdf_obj.set_font("Helvetica", "B", 11)
-                _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 7, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.set_text_color(23, 27, 25)
+                # ── KPIs ─────────────────────────────────────────────────
                 _monto_pdf_str = (
-                    f"${_monto_mr/1e9:,.2f} miles de millones MXN"
+                    f"${_monto_mr/1e9:,.2f} miles de M MXN"
                     if _monto_mr >= 1e9
                     else f"${_monto_mr/1e6:,.1f} M MXN"
                 )
@@ -5973,26 +5978,29 @@ def pagina_mapa_riesgo():
                     f"{_total_mr:,}", _monto_pdf_str,
                     f"{_n_prov_mr:,}", f"{_pct_lp_mr:.1f}%", f"{_pct_ad_mr:.1f}%",
                 ]
-                _cw_pdf = _pdf_obj.epw / 5
-                for _lbl in _kpi_labels_pdf:
-                    _pdf_obj.set_font("Helvetica", "B", 8)
-                    _pdf_obj.cell(_cw_pdf, 5, _s(_lbl))
-                _pdf_obj.ln(5)
-                for _val in _kpi_values_pdf:
-                    _pdf_obj.set_font("Helvetica", "", 10)
-                    _pdf_obj.cell(_cw_pdf, 6, _s(_val))
-                _pdf_obj.ln(10)
-
-                _pdf_obj.ln(4)
-
-                # ── Riesgos detectados en el PDF ──
-                _pdf_obj.set_font("Helvetica", "B", 11)
+                _pdf_obj.set_font("Helvetica", "B", 10)
                 _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 7, _s("Riesgos especificos detectados"), new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.cell(0, 6, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
+                _cw_pdf = _epw / 5
+                for _lbl in _kpi_labels_pdf:
+                    _pdf_obj.set_font("Helvetica", "B", 7)
+                    _pdf_obj.set_text_color(90, 90, 90)
+                    _pdf_obj.cell(_cw_pdf, 4, _s(_lbl))
+                _pdf_obj.ln(4)
+                for _val in _kpi_values_pdf:
+                    _pdf_obj.set_font("Helvetica", "B", 10)
+                    _pdf_obj.set_text_color(23, 27, 25)
+                    _pdf_obj.cell(_cw_pdf, 7, _s(_val))
+                _hr(gap_before=4, gap_after=5)
+
+                # ── Riesgos detectados ────────────────────────────────────
+                _pdf_obj.set_font("Helvetica", "B", 10)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 6, "Riesgos especificos detectados", new_x="LMARGIN", new_y="NEXT")
                 _pdf_obj.set_text_color(23, 27, 25)
                 if not _riesgos_activos:
                     _pdf_obj.set_font("Helvetica", "", 9)
-                    _pdf_obj.cell(0, 6, _s("Sin alertas de riesgo detectadas."), new_x="LMARGIN", new_y="NEXT")
+                    _pdf_obj.cell(0, 5, "Sin alertas de riesgo detectadas.", new_x="LMARGIN", new_y="NEXT")
                 else:
                     _RISK_LABELS_PDF = {
                         "san":       "Proveedores sancionados (SABG)",
@@ -6008,10 +6016,12 @@ def pagina_mapa_riesgo():
                     for _tr_p, _dr_p in _riesgos_activos:
                         _lbl_p = _RISK_LABELS_PDF.get(_tr_p, _tr_p)
                         if isinstance(_dr_p, tuple):
-                            _g_p = _dr_p[0]
-                            _line_p = f"  * {_lbl_p}: {len(_g_p)} grupo(s)"
+                            _line_p = f"  * {_lbl_p}: {len(_dr_p[0])} grupo(s)"
                         elif isinstance(_dr_p, pd.DataFrame):
-                            _m_p = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _m_p = pd.to_numeric(
+                                _dr_p.get("Importe DRC", pd.Series(dtype=float)),
+                                errors="coerce"
+                            ).sum()
                             _line_p = f"  * {_lbl_p}: {len(_dr_p)} contrato(s), ${_m_p/1e6:,.1f} M MXN"
                         elif isinstance(_dr_p, (int, float)):
                             _line_p = f"  * {_lbl_p}: {_dr_p:.1f}%"
@@ -6019,36 +6029,52 @@ def pagina_mapa_riesgo():
                             _line_p = f"  * {_lbl_p}"
                         _pdf_obj.set_font("Helvetica", "", 9)
                         _pdf_obj.cell(0, 5, _s(_line_p), new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.ln(4)
+                _hr(gap_before=2, gap_after=5)
 
-                # ── Charts ──
-                _charts_export = [
-                    ("Distribucion por Tipo de Procedimiento (contratos)", _fig_pA1),
-                    ("Distribucion por Tipo de Procedimiento (monto)", _fig_pA2),
-                    ("Proveedores por Monto Contratado", _fig_pB),
-                    ("Gasto por Partida Presupuestaria (CUCoP)", _fig_pC),
-                    ("Distribucion de Proveedores en la UC (HHI)", _fig_donut_mr),
+                # ── Gráficas ─────────────────────────────────────────────
+                # A) Pies de procedimiento: lado a lado
+                _half_w = (_epw - 4) / 2   # 4 mm de separación entre los dos pies
+                _pie_h_mm = round(_half_w * 380 / 560, 1)
+                _have_pies = _fig_pA1 is not None or _fig_pA2 is not None
+                if _have_pies:
+                    _pdf_obj.set_font("Helvetica", "B", 9)
+                    _pdf_obj.set_text_color(11, 84, 69)
+                    _pdf_obj.cell(0, 5, "Distribucion por Tipo de Procedimiento",
+                                  new_x="LMARGIN", new_y="NEXT")
+                    _y_pies = _pdf_obj.get_y()
+                    try:
+                        if _fig_pA1 is not None:
+                            _b1 = _fig_pA1.to_image(format="png", width=560, height=380, scale=1.5)
+                            _pdf_obj.image(_io_mr.BytesIO(_b1), x=15, y=_y_pies, w=_half_w)
+                        if _fig_pA2 is not None:
+                            _b2 = _fig_pA2.to_image(format="png", width=560, height=380, scale=1.5)
+                            _pdf_obj.image(_io_mr.BytesIO(_b2),
+                                           x=15 + _half_w + 4, y=_y_pies, w=_half_w)
+                    except Exception:
+                        pass
+                    _pdf_obj.set_y(_y_pies + _pie_h_mm + 3)
+
+                # B) Gráficas de ancho completo
+                _full_charts_pdf = [
+                    ("Proveedores por Monto Contratado",          _fig_pB,       400),
+                    ("Gasto por Partida Presupuestaria (CUCoP)",  _fig_pC,       400),
+                    ("Concentracion de Proveedores en la UC (HHI)", _fig_donut_mr, 370),
                 ]
-                for _chart_title, _chart_fig in _charts_export:
-                    if _chart_fig is None:
+                for _ct, _cf, _ch in _full_charts_pdf:
+                    if _cf is None:
                         continue
                     try:
-                        _img_bytes = _chart_fig.to_image(
-                            format="png", width=1100, height=440, scale=1.5
-                        )
-                        _pdf_obj.set_font("Helvetica", "B", 10)
+                        _ib = _cf.to_image(format="png", width=1000, height=_ch, scale=1.5)
+                        _pdf_obj.set_font("Helvetica", "B", 9)
                         _pdf_obj.set_text_color(11, 84, 69)
-                        _pdf_obj.cell(
-                            0, 6, _s(_chart_title),
-                            new_x="LMARGIN", new_y="NEXT",
-                        )
-                        _pdf_obj.image(_io_mr.BytesIO(_img_bytes), w=_pdf_obj.epw)
-                        _pdf_obj.ln(4)
+                        _pdf_obj.cell(0, 5, _s(_ct), new_x="LMARGIN", new_y="NEXT")
+                        _pdf_obj.image(_io_mr.BytesIO(_ib), w=_epw)
+                        _pdf_obj.ln(3)
                     except Exception:
                         pass
 
-                # ── Footer ──
-                _pdf_obj.set_font("Helvetica", "I", 8)
+                # ── Footer ───────────────────────────────────────────────
+                _pdf_obj.set_font("Helvetica", "I", 7)
                 _pdf_obj.set_text_color(134, 134, 136)
                 _pdf_obj.cell(
                     0, 5,
