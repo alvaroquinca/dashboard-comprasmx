@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit_authenticator as stauth
 
 # ─────────────────────────────────────────────
 # PALETA CROMÁTICA INSTITUCIONAL IMSS
@@ -131,6 +132,48 @@ footer                           { visibility: hidden !important; }
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# AUTENTICACIÓN
+# ─────────────────────────────────────────────
+def _secrets_to_dict(obj):
+    """Convierte AttrDict de st.secrets a dict estándar (recursivo)."""
+    if hasattr(obj, "items"):
+        return {k: _secrets_to_dict(v) for k, v in obj.items()}
+    return obj
+
+try:
+    _creds  = _secrets_to_dict(st.secrets["credentials"])
+    _cookie = st.secrets["cookie"]
+    _authenticator = stauth.Authenticate(
+        _creds,
+        str(_cookie["name"]),
+        str(_cookie["key"]),
+        int(_cookie["expiry_days"]),
+    )
+    _authenticator.login()
+    _auth_status = st.session_state.get("authentication_status")
+
+    if _auth_status is False:
+        st.error("❌ Usuario o contraseña incorrectos. Contacta al administrador del sistema.")
+        st.stop()
+    elif _auth_status is None:
+        st.markdown("""
+        <div style='text-align:center; margin-top:2rem;'>
+            <p style='color:#868688; font-size:0.9rem;'>
+                División de Monitoreo de la Integridad Institucional – IMSS
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+    # Si _auth_status is True → continuar con el dashboard
+
+except KeyError:
+    # Si no hay secrets configurados (ej. desarrollo local sin secrets.toml),
+    # mostrar advertencia pero permitir el acceso para no bloquear el desarrollo.
+    st.warning("⚠️ Autenticación no configurada — acceso en modo desarrollo.")
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 st.title("🔍 Dashboard de Integridad en Contrataciones Públicas")
 
@@ -405,6 +448,21 @@ def nivel_efos(sit):
 # Helper para aplicar fuente en figuras Plotly
 def plotly_font():
     return dict(family="Noto Sans, sans-serif", size=13, color=IMSS_NEGRO)
+
+# ─────────────────────────────────────────────
+# BARRA LATERAL – USUARIO / CERRAR SESIÓN
+# ─────────────────────────────────────────────
+if st.session_state.get("authentication_status"):
+    _nombre_usuario = st.session_state.get("name", "Usuario")
+    st.sidebar.markdown(
+        f"<span style='font-size:0.85rem;'>👤 {_nombre_usuario}</span>",
+        unsafe_allow_html=True
+    )
+    try:
+        _authenticator.logout("Cerrar sesión", "sidebar", key="logout_btn")
+    except Exception:
+        pass
+    st.sidebar.divider()
 
 # ─────────────────────────────────────────────
 # BARRA LATERAL – FILTROS
