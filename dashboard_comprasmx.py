@@ -323,6 +323,34 @@ def cargar_precios_unitarios():
     return df_pu
 
 
+@st.cache_data
+def cargar_consolidadas():
+    """
+    Carga AdjudicacionesConsolidada.xlsx y devuelve el precio mínimo
+    adjudicado (mejor precio negociado) por CLAVE de insumo.
+    El precio mínimo es el benchmark más conservador: si una UC pagó
+    más que el mejor precio de Compra Consolidada, hay margen de mejora.
+    """
+    df = pd.read_excel(
+        "AdjudicacionesConsolidada.xlsx",
+        sheet_name="Adjudicaciones",
+        dtype=str
+    )
+    df.columns = df.columns.str.strip()
+    df["PRECIO_N"] = pd.to_numeric(df["PRECIO"], errors="coerce")
+    precio = (
+        df[df["PRECIO_N"] > 0]          # excluir ítems no adjudicados (precio=0)
+        .groupby("CLAVE")
+        .agg(
+            Precio_Consolidada=("PRECIO_N", "min"),   # mejor precio negociado
+            n_prov_cons=("PROVEEDOR", "nunique"),
+            Tipo_Insumo=("TIPO INSUMO", "first"),
+        )
+        .reset_index()
+    )
+    return precio
+
+
 # ─────────────────────────────────────────────
 # FUNCIONES DE DATOS — INDICADORES DE RIESGO
 # ─────────────────────────────────────────────
@@ -6981,6 +7009,23 @@ def pagina_precios():
         if _caso_sel_det != "Todos": _det_df = _det_df[_det_df["Caso de atención crítico"] == _caso_sel_det]
         if _tipoprov_sel != "Todos": _det_df = _det_df[_det_df["Tipo de proveedor por historial"] == _tipoprov_sel]
 
+        # Enriquecer con precio de Compra Consolidada (columnas opcionales)
+        try:
+            _df_cons_det = cargar_consolidadas()
+            _det_df["_clave_det"] = _det_df["Descripción"].str.extract(
+                r'^(\d{3}\.\d{3}\.\d{4}(?:\.\d{2})?)'
+            )
+            _det_df = _det_df.merge(
+                _df_cons_det[["CLAVE", "Precio_Consolidada"]],
+                left_on="_clave_det", right_on="CLAVE", how="left"
+            ).drop(columns=["_clave_det", "CLAVE"], errors="ignore")
+            _det_df["% vs. Consolidada"] = (
+                (_det_df["Precio unitario"] - _det_df["Precio_Consolidada"])
+                / _det_df["Precio_Consolidada"] * 100
+            ).round(1)
+        except (FileNotFoundError, Exception):
+            pass
+
         if len(_det_df) == 0:
             st.info("ℹ️ No hay partidas con los filtros seleccionados.")
         else:
@@ -6990,7 +7035,8 @@ def pagina_precios():
                 "Caso de atención crítico",
                 "UC", "Descripción",
                 "Proveedor", "RFC del proveedor adjudicado",
-                "Precio unitario", "Mediana (P)", "Precio estandarizado",
+                "Precio unitario", "Precio_Consolidada", "% vs. Consolidada",
+                "Mediana (P)", "Precio estandarizado",
                 "Cantidad", "Monto partida",
                 "Fuente Compras MX", "Consolidada",
                 "Tipo de proveedor por historial",
@@ -6999,6 +7045,7 @@ def pagina_precios():
 
             _tbl_det = (
                 _det_df[_cols_det]
+                .rename(columns={"Precio_Consolidada": "Precio Consolidada"})
                 .sort_values("Precio estandarizado", ascending=False)
                 .reset_index(drop=True)
             )
@@ -7253,6 +7300,207 @@ def pagina_precios():
                         mime="text/csv",
                         key="dl_pu_prov"
                     )
+
+        st.divider()
+
+        # ── SECCIÓN 6: BENCHMARK VS. PRECIO DE COMPRA CONSOLIDADA ──────
+        st.subheader("6️⃣ Benchmark vs. Precio de Compra Consolidada")
+        st.caption(
+            "Compara los precios unitarios contratados por cada UC contra el precio "
+            "de referencia de la Compra Consolidada. Se usa el precio mínimo adjudicado "
+            "en la consolidada como benchmark. Un precio mayor no implica irregularidad "
+            "automáticamente — cada caso debe evaluarse considerando volumen, urgencia y "
+            "condiciones de exclusividad."
+        )
+
+        try:
+            _df_cons6 = cargar_consolidadas()
+
+            # Extraer CLAVE y cruzar con datos del período filtrado
+            _pu6 = df_pu_f.copy()
+            _pu6["_clave6"] = _pu6["Descripción"].str.extract(
+                r'^(\d{3}\.\d{3}\.\d{4}(?:\.\d{2})?)'
+            )
+            _pu6 = _pu6.merge(
+                _df_cons6[["CLAVE", "Precio_Consolidada", "Tipo_Insumo"]],
+                left_on="_clave6", right_on="CLAVE", how="inner"
+            ).drop(columns=["_clave6", "CLAVE"], errors="ignore")
+
+            _pu6["Precio_N6"]  = pd.to_numeric(_pu6["Precio unitario"], errors="coerce")
+            _pu6["Cant_N6"]    = pd.to_numeric(_pu6["Cantidad"],         errors="coerce")
+            _pu6["Cons_N6"]    = pd.to_numeric(_pu6["Precio_Consolidada"], errors="coerce")
+            _pu6["Dif_pct6"]   = ((_pu6["Precio_N6"] - _pu6["Cons_N6"]) / _pu6["Cons_N6"] * 100).round(1)
+            _pu6["Sobre6"]     = _pu6["Precio_N6"] > _pu6["Cons_N6"]
+            _pu6["Exceso6"]    = (_pu6["Precio_N6"] - _pu6["Cons_N6"]).clip(lower=0) * _pu6["Cant_N6"]
+
+            # ── KPIs ──────────────────────────────────────────────────
+            _n_tot6    = len(_pu6)
+            _n_sob6    = int(_pu6["Sobre6"].sum())
+            _pct_sob6  = (_n_sob6 / _n_tot6 * 100) if _n_tot6 > 0 else 0
+            _mo_exc6   = _pu6["Exceso6"].sum()
+            _n_ins6    = _pu6["_clave6"].nunique() if "_clave6" in _pu6.columns else _pu6["Descripción"].nunique()
+            _n_ins_sob6 = _pu6.loc[_pu6["Sobre6"], "Descripción"].nunique()
+
+            _k61, _k62, _k63, _k64 = st.columns(4)
+            _k61.metric("📋 Partidas comparables",    f"{_n_tot6:,}")
+            _k62.metric("🚨 Precio > Consolidada",    f"{_n_sob6:,}  ({_pct_sob6:.1f}%)")
+            _k63.metric("💰 Monto estimado de exceso", f"${_mo_exc6/1e6:,.1f} M MXN")
+            _k64.metric("💊 Insumos con precio mayor",
+                        f"{_n_ins_sob6:,} de {_n_tot6 and _pu6['Descripción'].nunique():,}")
+
+            if _n_sob6 > 0:
+                st.warning(
+                    f"⚠️ **{_n_sob6:,} partidas** presentan precio mayor al de "
+                    f"la Compra Consolidada de referencia — exceso estimado de "
+                    f"**${_mo_exc6/1e6:,.1f} M MXN**."
+                )
+            else:
+                st.success("✅ No se detectaron precios por encima del precio de Compra Consolidada.")
+
+            if _n_sob6 > 0:
+                # ── Gráfica A: Top 15 insumos por monto de exceso ─────
+                _top6 = (
+                    _pu6[_pu6["Sobre6"]]
+                    .groupby("Descripción")
+                    .agg(
+                        Exceso_total =("Exceso6",    "sum"),
+                        Partidas     =("Exceso6",    "count"),
+                        Precio_UC    =("Precio_N6",  "mean"),
+                        Precio_Cons  =("Cons_N6",    "mean"),
+                        Dif_pct_prom =("Dif_pct6",   "mean"),
+                    )
+                    .sort_values("Exceso_total", ascending=False)
+                    .head(15)
+                    .reset_index()
+                )
+                _top6["Exceso_fmt"] = _top6["Exceso_total"].apply(lambda x: f"${x/1e6:,.1f} M")
+                _top6["Desc_corta"] = _top6["Descripción"].apply(
+                    lambda s: str(s)[:65] + "…" if len(str(s)) > 65 else str(s)
+                )
+                _top6_s = _top6.sort_values("Exceso_total")
+                _dif_max6 = min(_top6_s["Dif_pct_prom"].max(), 500)  # cap para colorscale
+
+                _fig6A = go.Figure(go.Bar(
+                    x=_top6_s["Exceso_total"] / 1e6,
+                    y=_top6_s["Desc_corta"],
+                    orientation="h",
+                    marker=dict(
+                        color=_top6_s["Dif_pct_prom"].clip(upper=500),
+                        colorscale=[[0, IMSS_ORO], [0.3, "#E07B00"], [1, IMSS_ROJO]],
+                        colorbar=dict(title="% sobre<br>Consolidada", thickness=12, len=0.8),
+                        showscale=True,
+                    ),
+                    text=_top6_s["Exceso_fmt"],
+                    textposition="outside",
+                    cliponaxis=False,
+                    customdata=_top6_s[["Partidas", "Precio_UC", "Precio_Cons", "Dif_pct_prom"]].values,
+                    hovertemplate=(
+                        "<b>%{y}</b><br>"
+                        "Monto de exceso: %{text}<br>"
+                        "Partidas: %{customdata[0]:,}<br>"
+                        "Precio prom UC: $%{customdata[1]:,.4f}<br>"
+                        "Precio Consolidada: $%{customdata[2]:,.4f}<br>"
+                        "Diferencia promedio: +%{customdata[3]:.1f}%<extra></extra>"
+                    )
+                ))
+                _fig6A.update_layout(
+                    title="Top 15 insumos por monto estimado de exceso vs. Compra Consolidada",
+                    title_font_color=IMSS_VERDE_OSC,
+                    font=plotly_font(),
+                    plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                    xaxis=dict(
+                        title="Monto de exceso (millones MXN)",
+                        tickformat=",.1f", ticksuffix=" M",
+                        tickfont=dict(family="Noto Sans, sans-serif", size=9),
+                    ),
+                    yaxis=dict(tickfont=dict(size=9, family="Noto Sans, sans-serif")),
+                    height=max(400, len(_top6_s) * 38 + 120),
+                    margin=dict(l=10, r=90, t=50, b=30),
+                )
+                st.plotly_chart(_fig6A, use_container_width=True)
+
+                # ── Gráfica B: Distribución de diferencia porcentual ──
+                st.markdown("**📊 Distribución de la diferencia % (precio UC vs. Compra Consolidada)**")
+                _bins6  = [-9999, -50, -20, -5, 5, 20, 50, 100, 9999]
+                _labs6  = ["< −50%", "−50 a −20%", "−20 a −5%", "±5%",
+                           "+5 a +20%", "+20 a +50%", "+50 a +100%", "> +100%"]
+                _clrs6  = [IMSS_VERDE, IMSS_VERDE, IMSS_VERDE, IMSS_GRIS,
+                           IMSS_ORO, "#E07B00", IMSS_ROJO, IMSS_ROJO_OSC]
+                _dist6  = pd.cut(_pu6["Dif_pct6"], bins=_bins6, labels=_labs6)
+                _dist6_df = _dist6.value_counts().reindex(_labs6, fill_value=0).reset_index()
+                _dist6_df.columns = ["Rango", "Partidas"]
+                _fig6B = go.Figure(go.Bar(
+                    x=_dist6_df["Rango"],
+                    y=_dist6_df["Partidas"],
+                    marker_color=_clrs6,
+                    text=_dist6_df["Partidas"].apply(lambda x: f"{x:,}"),
+                    textposition="outside",
+                    hovertemplate="<b>%{x}</b><br>Partidas: %{y:,}<extra></extra>"
+                ))
+                _fig6B.update_layout(
+                    font=plotly_font(),
+                    plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                    xaxis=dict(tickfont=dict(size=10, family="Noto Sans, sans-serif")),
+                    yaxis=dict(title="Partidas", tickformat=","),
+                    height=340,
+                    margin=dict(l=10, r=10, t=20, b=30),
+                )
+                st.plotly_chart(_fig6B, use_container_width=True)
+
+            # ── Tabla detalle (todas las partidas comparables) ────────
+            with st.expander(
+                f"📋 Ver detalle de partidas con precio > Compra Consolidada "
+                f"({_n_sob6:,} registros)"
+            ):
+                _cols6_tbl = [c for c in [
+                    "Fuente Compras MX", "UC", "Descripción",
+                    "Proveedor", "RFC del proveedor adjudicado",
+                    "Precio unitario", "Precio_Consolidada", "Dif_pct6",
+                    "Exceso6", "Precio atípico",
+                    "Cantidad", "Monto partida",
+                    "Caso de atención crítico", "Consolidada",
+                    "Tipo_Insumo", "Vínculo"
+                ] if c in _pu6.columns]
+                _tbl6 = (
+                    _pu6[_pu6["Sobre6"]][_cols6_tbl]
+                    .rename(columns={
+                        "Precio_Consolidada": "Precio Consolidada",
+                        "Dif_pct6":           "% vs. Consolidada",
+                        "Exceso6":            "Monto exceso est.",
+                        "Tipo_Insumo":        "Tipo insumo",
+                    })
+                    .sort_values("Monto exceso est.", ascending=False)
+                    .reset_index(drop=True)
+                )
+                _tbl6.index += 1
+                st.dataframe(
+                    _tbl6,
+                    column_config={
+                        "Vínculo": st.column_config.LinkColumn(
+                            "🔗 ComprasMX", display_text="Ver contrato"
+                        )
+                    },
+                    use_container_width=True,
+                    height=460
+                )
+                st.download_button(
+                    "📥 Descargar benchmark Compra Consolidada (CSV)",
+                    data=(
+                        _tbl6
+                        .drop(columns=["Vínculo"], errors="ignore")
+                        .to_csv(index=False)
+                        .encode("utf-8-sig")
+                    ),
+                    file_name="benchmark_compra_consolidada.csv",
+                    mime="text/csv",
+                    key="dl_pu_cons6"
+                )
+
+        except FileNotFoundError:
+            st.info(
+                "ℹ️ Para activar esta sección coloca `AdjudicacionesConsolidada.xlsx` "
+                "en la misma carpeta que el dashboard."
+            )
 
     except FileNotFoundError:
         st.info(
