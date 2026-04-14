@@ -7003,6 +7003,231 @@ def pagina_precios():
                 key="dl_pu5"
             )
 
+        st.divider()
+
+        # ── SECCIÓN 5: ANÁLISIS POR PROVEEDOR ──────────────────────────
+        st.subheader("5️⃣ Análisis por Proveedor")
+        st.caption(
+            "Filtra el historial de precios unitarios de una empresa específica. "
+            "Se aplican los mismos filtros de año y caso de atención seleccionados arriba."
+        )
+
+        _busq_prov_pu = st.text_input(
+            "🔍 Buscar empresa",
+            placeholder="RFC o nombre del proveedor adjudicado…",
+            key="pu_prov_busq"
+        )
+
+        if not _busq_prov_pu.strip():
+            st.info("Ingresa el nombre o RFC de la empresa para ver su historial de precios.")
+        else:
+            _col_rfc_pu  = "RFC del proveedor adjudicado"
+            _col_prov_pu = "Proveedor"
+            _q_prov_pu   = _busq_prov_pu.strip().upper()
+
+            _mask_prov_pu = (
+                df_pu_f[_col_prov_pu].str.upper().str.contains(_q_prov_pu, na=False)
+                | df_pu_f[_col_rfc_pu].str.upper().str.contains(_q_prov_pu, na=False)
+            )
+            _empresas_pu = (
+                df_pu_f[_mask_prov_pu][[_col_prov_pu, _col_rfc_pu]]
+                .dropna(subset=[_col_rfc_pu])
+                .drop_duplicates(subset=[_col_rfc_pu])
+                .sort_values(_col_prov_pu)
+                .reset_index(drop=True)
+            )
+
+            if len(_empresas_pu) == 0:
+                st.warning(f"⚠️ No se encontraron empresas con «{_busq_prov_pu}» en el archivo de precios unitarios.")
+            else:
+                _labels_prov_pu = [
+                    f"{row[_col_prov_pu]}  —  {str(row[_col_rfc_pu]).strip().upper()}"
+                    for _, row in _empresas_pu.iterrows()
+                ]
+                _idx_prov_pu = st.selectbox(
+                    f"Se encontraron {len(_empresas_pu):,} empresa(s). Selecciona una:",
+                    range(len(_labels_prov_pu)),
+                    format_func=lambda i: _labels_prov_pu[i],
+                    key="pu_prov_sel"
+                )
+                _rfc_sel_pu = str(_empresas_pu.iloc[_idx_prov_pu][_col_rfc_pu]).strip().upper()
+                _nom_sel_pu = _empresas_pu.iloc[_idx_prov_pu][_col_prov_pu]
+
+                _df_prov_pu   = df_pu_f[df_pu_f[_col_rfc_pu].str.strip().str.upper() == _rfc_sel_pu].copy()
+                _atip_prov_pu = _df_prov_pu[_df_prov_pu["Precio atípico"] == "SI"].copy()
+
+                _n_tot_prov  = len(_df_prov_pu)
+                _n_at_prov   = len(_atip_prov_pu)
+                _pct_at_prov = (_n_at_prov / _n_tot_prov * 100) if _n_tot_prov > 0 else 0
+                _mo_at_prov  = _atip_prov_pu["Monto partida"].sum() if _n_at_prov > 0 else 0
+                _zmax_prov   = _atip_prov_pu["Precio estandarizado"].max() if _n_at_prov > 0 else 0
+
+                st.markdown(f"##### 🏭 {_nom_sel_pu}  `{_rfc_sel_pu}`")
+
+                _kpp1, _kpp2, _kpp3, _kpp4 = st.columns(4)
+                _kpp1.metric("📋 Partidas totales",      f"{_n_tot_prov:,}")
+                _kpp2.metric("🚨 Partidas atípicas",     f"{_n_at_prov:,}  ({_pct_at_prov:.1f}%)")
+                _kpp3.metric("💰 Monto con sobreprecio", f"${_mo_at_prov/1e6:,.1f} M MXN")
+                _kpp4.metric("📈 Z-score máximo",        f"{_zmax_prov:+.2f}" if _n_at_prov > 0 else "N/A")
+
+                if _n_at_prov == 0:
+                    st.success("✅ Esta empresa no tiene partidas con precio atípico en el período y filtros seleccionados.")
+                else:
+                    # ── Gráfica A: Top 15 insumos atípicos por monto (color = Z-score) ──
+                    _atip_grp_prov = (
+                        _atip_prov_pu.groupby("Descripción")
+                        .agg(
+                            Monto       =("Monto partida",        "sum"),
+                            Partidas    =("Monto partida",        "count"),
+                            Zscore_max  =("Precio estandarizado", "max"),
+                            Precio_prom =("Precio unitario",      "mean"),
+                            Mediana     =("Mediana (P)",          "mean"),
+                        )
+                        .sort_values("Monto", ascending=False)
+                        .head(15)
+                        .reset_index()
+                    )
+                    _atip_grp_prov["Monto_fmt"] = _atip_grp_prov["Monto"].apply(
+                        lambda x: f"${x/1e6:,.1f} M"
+                    )
+                    _atip_grp_prov["Desc_corta"] = _atip_grp_prov["Descripción"].apply(
+                        lambda s: str(s)[:60] + "…" if len(str(s)) > 60 else str(s)
+                    )
+                    _grp_prov_s = _atip_grp_prov.sort_values("Monto")
+
+                    _fig_prov_atip = go.Figure(go.Bar(
+                        x=_grp_prov_s["Monto"] / 1e6,
+                        y=_grp_prov_s["Desc_corta"],
+                        orientation="h",
+                        marker=dict(
+                            color=_grp_prov_s["Zscore_max"],
+                            colorscale=[[0, IMSS_ORO], [0.5, "#E07B00"], [1, IMSS_ROJO]],
+                            colorbar=dict(title="Z-score máx", thickness=12, len=0.8),
+                            showscale=True,
+                        ),
+                        text=_grp_prov_s["Monto_fmt"],
+                        textposition="outside",
+                        cliponaxis=False,
+                        customdata=_grp_prov_s[["Partidas", "Zscore_max", "Precio_prom", "Mediana"]].values,
+                        hovertemplate=(
+                            "<b>%{y}</b><br>"
+                            "Monto atípico: %{text}<br>"
+                            "Partidas: %{customdata[0]:,}<br>"
+                            "Z-score máx: %{customdata[1]:.2f}<br>"
+                            "Precio prom empresa: $%{customdata[2]:,.4f}<br>"
+                            "Mediana mercado: $%{customdata[3]:,.4f}<extra></extra>"
+                        )
+                    ))
+                    _fig_prov_atip.update_layout(
+                        title=f"Top 15 insumos con precio atípico — {str(_nom_sel_pu)[:45]}",
+                        title_font_color=IMSS_VERDE_OSC,
+                        font=plotly_font(),
+                        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                        xaxis=dict(
+                            title="Monto (millones MXN)",
+                            tickformat=",.1f", ticksuffix=" M",
+                            tickfont=dict(family="Noto Sans, sans-serif", size=9),
+                        ),
+                        yaxis=dict(tickfont=dict(size=9, family="Noto Sans, sans-serif")),
+                        height=max(380, len(_grp_prov_s) * 38 + 120),
+                        margin=dict(l=10, r=90, t=50, b=30),
+                    )
+                    st.plotly_chart(_fig_prov_atip, use_container_width=True)
+
+                    # ── Gráfica B: Precio empresa vs mediana por insumo ──
+                    st.markdown("**📊 Precio empresa vs. mediana del mercado (insumos atípicos)**")
+                    _cmp_df = _atip_prov_pu[
+                        [c for c in ["Descripción", "Precio unitario", "Mediana (P)", "Precio estandarizado"]
+                         if c in _atip_prov_pu.columns]
+                    ].copy()
+                    _cmp_df["Precio unitario"] = pd.to_numeric(_cmp_df["Precio unitario"], errors="coerce")
+                    _cmp_df["Mediana (P)"]     = pd.to_numeric(_cmp_df["Mediana (P)"],     errors="coerce")
+                    _cmp_df["% sobre mediana"] = (
+                        (_cmp_df["Precio unitario"] - _cmp_df["Mediana (P)"]) / _cmp_df["Mediana (P)"] * 100
+                    ).round(1)
+                    _cmp_agg = (
+                        _cmp_df.groupby("Descripción")
+                        .agg(
+                            Precio_prom  =("Precio unitario", "mean"),
+                            Mediana_prom =("Mediana (P)",     "mean"),
+                            Pct_sobre    =("% sobre mediana", "mean"),
+                        )
+                        .sort_values("Pct_sobre", ascending=False)
+                        .head(12)
+                        .reset_index()
+                    )
+                    _cmp_agg["Desc_corta"] = _cmp_agg["Descripción"].apply(
+                        lambda s: str(s)[:55] + "…" if len(str(s)) > 55 else str(s)
+                    )
+                    _fig_cmp_prov = go.Figure()
+                    _fig_cmp_prov.add_trace(go.Bar(
+                        name="Mediana mercado",
+                        x=_cmp_agg["Desc_corta"],
+                        y=_cmp_agg["Mediana_prom"],
+                        marker_color=IMSS_VERDE,
+                        hovertemplate="<b>%{x}</b><br>Mediana: $%{y:,.4f}<extra></extra>"
+                    ))
+                    _fig_cmp_prov.add_trace(go.Bar(
+                        name="Precio empresa",
+                        x=_cmp_agg["Desc_corta"],
+                        y=_cmp_agg["Precio_prom"],
+                        marker_color=IMSS_ROJO,
+                        customdata=_cmp_agg["Pct_sobre"],
+                        hovertemplate=(
+                            "<b>%{x}</b><br>Precio empresa: $%{y:,.4f}<br>"
+                            "%{customdata:.1f}% sobre mediana<extra></extra>"
+                        ),
+                    ))
+                    _fig_cmp_prov.update_layout(
+                        barmode="group",
+                        font=plotly_font(),
+                        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                        xaxis=dict(tickangle=-35, tickfont=dict(size=8, family="Noto Sans, sans-serif")),
+                        yaxis=dict(title="Precio unitario (MXN)", tickformat=",.4f"),
+                        legend=dict(orientation="h", y=1.08, x=0, font=dict(size=11)),
+                        height=430,
+                        margin=dict(l=10, r=10, t=60, b=130),
+                    )
+                    st.plotly_chart(_fig_cmp_prov, use_container_width=True)
+
+                # ── Tabla completa de esta empresa ──
+                with st.expander("📋 Ver todas las partidas de esta empresa"):
+                    _cols_prov_tbl = [c for c in [
+                        "Fuente Compras MX", "UC", "Descripción",
+                        "Precio unitario", "Mediana (P)", "Precio estandarizado",
+                        "Precio atípico", "Cantidad", "Monto partida",
+                        "Caso de atención crítico", "Consolidada",
+                        "Tipo de proveedor por historial", "Vínculo"
+                    ] if c in _df_prov_pu.columns]
+                    _tbl_prov_pu = (
+                        _df_prov_pu[_cols_prov_tbl]
+                        .sort_values("Precio estandarizado", ascending=False)
+                        .reset_index(drop=True)
+                    )
+                    _tbl_prov_pu.index += 1
+                    st.dataframe(
+                        _tbl_prov_pu,
+                        column_config={
+                            "Vínculo": st.column_config.LinkColumn(
+                                "🔗 ComprasMX", display_text="Ver contrato"
+                            )
+                        },
+                        use_container_width=True,
+                        height=400
+                    )
+                    st.download_button(
+                        "📥 Descargar historial de precios (CSV)",
+                        data=(
+                            _tbl_prov_pu
+                            .drop(columns=["Vínculo"], errors="ignore")
+                            .to_csv(index=False)
+                            .encode("utf-8-sig")
+                        ),
+                        file_name=f"precios_{_rfc_sel_pu}.csv",
+                        mime="text/csv",
+                        key="dl_pu_prov"
+                    )
+
     except FileNotFoundError:
         st.info(
             "ℹ️ Para activar esta sección, coloca el archivo "
@@ -8180,6 +8405,145 @@ def pagina_empresa():
             },
             use_container_width=True
         )
+
+    # ════════════════════════════════════════════════════════════
+    # BLOQUE 5 — ANALÍTICA DE PRECIOS UNITARIOS
+    # ════════════════════════════════════════════════════════════
+    st.divider()
+    st.markdown("#### 💊 Analítica de Precios Unitarios")
+    st.caption(
+        "Registros de esta empresa en el análisis estadístico de precios de medicamentos "
+        "(método Tukey-IQR). Abarca todos los años disponibles en la herramienta de analítica."
+    )
+
+    try:
+        _pu_emp_all = cargar_precios_unitarios()
+        _col_rfc_pu2 = "RFC del proveedor adjudicado"
+        _df_pu_emp = _pu_emp_all[
+            _pu_emp_all[_col_rfc_pu2].str.strip().str.upper() == _rfc_emp
+        ].copy() if _col_rfc_pu2 in _pu_emp_all.columns else pd.DataFrame()
+
+        if len(_df_pu_emp) == 0:
+            st.info("ℹ️ Esta empresa no tiene registros en el archivo de Analítica de Precios Unitarios.")
+        else:
+            _atip_pu_emp = _df_pu_emp[_df_pu_emp["Precio atípico"] == "SI"].copy()
+            _n_tot_pe    = len(_df_pu_emp)
+            _n_at_pe     = len(_atip_pu_emp)
+            _pct_at_pe   = (_n_at_pe / _n_tot_pe * 100) if _n_tot_pe > 0 else 0
+            _mo_at_pe    = _atip_pu_emp["Monto partida"].sum() if _n_at_pe > 0 else 0
+            _zmax_pe     = _atip_pu_emp["Precio estandarizado"].max() if _n_at_pe > 0 else 0
+
+            _kppe1, _kppe2, _kppe3, _kppe4 = st.columns(4)
+            _kppe1.metric("📋 Partidas analizadas",   f"{_n_tot_pe:,}")
+            _kppe2.metric("🚨 Con precio atípico",    f"{_n_at_pe:,}  ({_pct_at_pe:.1f}%)")
+            _kppe3.metric("💰 Monto con sobreprecio", f"${_mo_at_pe/1e6:,.1f} M MXN")
+            _kppe4.metric("📈 Z-score máximo",        f"{_zmax_pe:+.2f}" if _n_at_pe > 0 else "N/A")
+
+            if _n_at_pe == 0:
+                st.success("✅ No se detectaron precios atípicos para esta empresa.")
+            else:
+                st.warning(f"⚠️ Se detectaron **{_n_at_pe:,}** partidas con precio atípico.")
+
+                # ── Gráfica: Top 10 insumos atípicos coloreados por Z-score ──
+                _atip_grp_pe = (
+                    _atip_pu_emp.groupby("Descripción")
+                    .agg(
+                        Monto       =("Monto partida",        "sum"),
+                        Partidas    =("Monto partida",        "count"),
+                        Zscore_max  =("Precio estandarizado", "max"),
+                        Precio_prom =("Precio unitario",      "mean"),
+                        Mediana     =("Mediana (P)",          "mean"),
+                    )
+                    .sort_values("Monto", ascending=False)
+                    .head(10)
+                    .reset_index()
+                )
+                _atip_grp_pe["Monto_fmt"] = _atip_grp_pe["Monto"].apply(
+                    lambda x: f"${x/1e6:,.1f} M"
+                )
+                _atip_grp_pe["Desc_corta"] = _atip_grp_pe["Descripción"].apply(
+                    lambda s: str(s)[:60] + "…" if len(str(s)) > 60 else str(s)
+                )
+                _grp_pe_s = _atip_grp_pe.sort_values("Monto")
+
+                _fig_pu_emp = go.Figure(go.Bar(
+                    x=_grp_pe_s["Monto"] / 1e6,
+                    y=_grp_pe_s["Desc_corta"],
+                    orientation="h",
+                    marker=dict(
+                        color=_grp_pe_s["Zscore_max"],
+                        colorscale=[[0, IMSS_ORO], [0.5, "#E07B00"], [1, IMSS_ROJO]],
+                        colorbar=dict(title="Z-score máx", thickness=12, len=0.8),
+                        showscale=True,
+                    ),
+                    text=_grp_pe_s["Monto_fmt"],
+                    textposition="outside",
+                    cliponaxis=False,
+                    customdata=_grp_pe_s[["Partidas", "Zscore_max", "Precio_prom", "Mediana"]].values,
+                    hovertemplate=(
+                        "<b>%{y}</b><br>"
+                        "Monto atípico: %{text}<br>"
+                        "Partidas: %{customdata[0]:,}<br>"
+                        "Z-score máx: %{customdata[1]:.2f}<br>"
+                        "Precio prom empresa: $%{customdata[2]:,.4f}<br>"
+                        "Mediana mercado: $%{customdata[3]:,.4f}<extra></extra>"
+                    )
+                ))
+                _fig_pu_emp.update_layout(
+                    title="Top 10 insumos con precio atípico (por monto)",
+                    title_font_color=IMSS_VERDE_OSC,
+                    font=plotly_font(),
+                    plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                    xaxis=dict(
+                        title="Monto (millones MXN)",
+                        tickformat=",.1f", ticksuffix=" M",
+                        tickfont=dict(family="Noto Sans, sans-serif", size=9),
+                    ),
+                    yaxis=dict(tickfont=dict(size=9, family="Noto Sans, sans-serif")),
+                    height=max(350, len(_grp_pe_s) * 42 + 100),
+                    margin=dict(l=10, r=90, t=50, b=30),
+                )
+                st.plotly_chart(_fig_pu_emp, use_container_width=True)
+
+            # ── Tabla completa (atípicas y no atípicas) ──
+            with st.expander("📋 Ver todas las partidas de precios de esta empresa"):
+                _cols_pu_emp = [c for c in [
+                    "Fuente Compras MX", "UC", "Descripción",
+                    "Precio unitario", "Mediana (P)", "Precio estandarizado",
+                    "Precio atípico", "Cantidad", "Monto partida",
+                    "Caso de atención crítico", "Vínculo"
+                ] if c in _df_pu_emp.columns]
+                _tbl_pu_emp = (
+                    _df_pu_emp[_cols_pu_emp]
+                    .sort_values("Precio estandarizado", ascending=False)
+                    .reset_index(drop=True)
+                )
+                _tbl_pu_emp.index += 1
+                st.dataframe(
+                    _tbl_pu_emp,
+                    column_config={
+                        "Vínculo": st.column_config.LinkColumn(
+                            "🔗 ComprasMX", display_text="Ver contrato"
+                        )
+                    },
+                    use_container_width=True,
+                    height=380
+                )
+                st.download_button(
+                    "📥 Descargar precios (CSV)",
+                    data=(
+                        _tbl_pu_emp
+                        .drop(columns=["Vínculo"], errors="ignore")
+                        .to_csv(index=False)
+                        .encode("utf-8-sig")
+                    ),
+                    file_name=f"precios_unitarios_{_rfc_emp}.csv",
+                    mime="text/csv",
+                    key="dl_pu_empresa"
+                )
+
+    except FileNotFoundError:
+        st.info("ℹ️ El archivo `AnaliticaPreciosUnitarios.xlsx` no está disponible.")
 
 
 # ═══════════════════════════════════════════════════════════════
