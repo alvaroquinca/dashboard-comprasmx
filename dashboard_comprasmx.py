@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-14
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-16
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -6000,15 +6000,19 @@ def pagina_mapa_riesgo():
                 )
                 _kpi_labels_pdf = [
                     "Contratos", "Monto total",
-                    "Proveedores unicos", "% Monto LP", "% Monto AD",
+                    "Proveedores únicos", "% Monto LP", "% Monto AD",
                 ]
                 _kpi_values_pdf = [
                     f"{_total_mr:,}", _monto_pdf_str,
                     f"{_n_prov_mr:,}", f"{_pct_lp_mr:.1f}%", f"{_pct_ad_mr:.1f}%",
                 ]
+                _anio_pdf_str = ", ".join(sorted(anios_sel)) if anios_sel else "Todos los años"
                 _pdf_obj.set_font("Helvetica", "B", 10)
                 _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 6, "Numeralia General", new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.cell(
+                    0, 6, _s(f"Numeralia General  |  {_anio_pdf_str}"),
+                    new_x="LMARGIN", new_y="NEXT"
+                )
                 _cw_pdf = _epw / 5
                 for _lbl in _kpi_labels_pdf:
                     _pdf_obj.set_font("Helvetica", "B", 7)
@@ -6019,7 +6023,8 @@ def pagina_mapa_riesgo():
                     _pdf_obj.set_font("Helvetica", "B", 10)
                     _pdf_obj.set_text_color(23, 27, 25)
                     _pdf_obj.cell(_cw_pdf, 7, _s(_val))
-                _hr(gap_before=4, gap_after=5)
+                # gap_before >= altura de la celda de valores (7 mm) para no solapar
+                _hr(gap_before=8, gap_after=5)
 
                 # ── Riesgos detectados ────────────────────────────────────
                 _pdf_obj.set_font("Helvetica", "B", 10)
@@ -6067,7 +6072,7 @@ def pagina_mapa_riesgo():
                 if _have_pies:
                     _pdf_obj.set_font("Helvetica", "B", 9)
                     _pdf_obj.set_text_color(11, 84, 69)
-                    _pdf_obj.cell(0, 5, "Distribucion por Tipo de Procedimiento",
+                    _pdf_obj.cell(0, 5, _s("Distribución por Tipo de Procedimiento"),
                                   new_x="LMARGIN", new_y="NEXT")
                     _y_pies = _pdf_obj.get_y()
                     try:
@@ -6082,21 +6087,178 @@ def pagina_mapa_riesgo():
                         pass
                     _pdf_obj.set_y(_y_pies + _pie_h_mm + 3)
 
-                # B) Gráficas de ancho completo
-                _full_charts_pdf = [
-                    ("Proveedores por Monto Contratado",          _fig_pB,       400),
-                    ("Gasto por Partida Presupuestaria (CUCoP)",  _fig_pC,       400),
-                    ("Concentracion de Proveedores en la UC (HHI)", _fig_donut_mr, 370),
-                ]
-                for _ct, _cf, _ch in _full_charts_pdf:
-                    if _cf is None:
-                        continue
+                # B) Tablas de texto (más legibles en impresión)
+                _rh_t = 5   # altura de fila compartida
+
+                # ── B-1) Top-10 Proveedores ───────────────────────────────
+                _hr(gap_before=5, gap_after=4)
+                _pdf_obj.set_font("Helvetica", "B", 9)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 5, _s("Principales Proveedores (Top 10)"),
+                              new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.ln(1)
+
+                # Construir datos (conteo + suma por proveedor)
+                _prov_pdf = (
+                    _dff_sel.groupby(["Proveedor o contratista", "rfc"])
+                    .agg(_cttos=("Importe DRC", "count"), _monto=("Importe DRC", "sum"))
+                    .reset_index()
+                    .sort_values("_monto", ascending=False)
+                    .head(10)
+                    .reset_index(drop=True)
+                )
+                _prov_pdf["_partida_prin"] = ""
+                try:
+                    if len(df_cucop) > 0 and "Partida específica" in _dff_sel.columns:
+                        _cp_pdf = _dff_sel[["rfc", "Partida específica", "Importe DRC"]].copy()
+                        _cp_pdf["_ll"] = _cp_pdf["Partida específica"].str.split(",")
+                        _cp_pdf["_nn"] = _cp_pdf["_ll"].apply(len)
+                        _cp_pdf["Importe DRC"] = (
+                            pd.to_numeric(_cp_pdf["Importe DRC"], errors="coerce") / _cp_pdf["_nn"]
+                        )
+                        _cp_pdf = _cp_pdf.explode("_ll")
+                        _cp_pdf["Partida específica"] = _cp_pdf["_ll"].str.strip().str.zfill(5)
+                        if "DESC. PARTIDA GENÉRICA" in df_cucop.columns:
+                            _cp_pdf = _cp_pdf.merge(
+                                df_cucop[["PARTIDA ESPECÍFICA", "DESC. PARTIDA GENÉRICA"]]
+                                .drop_duplicates(subset=["PARTIDA ESPECÍFICA"]),
+                                left_on="Partida específica",
+                                right_on="PARTIDA ESPECÍFICA",
+                                how="left",
+                            )
+                            _top_pp = (
+                                _cp_pdf.groupby(["rfc", "DESC. PARTIDA GENÉRICA"])["Importe DRC"]
+                                .sum().reset_index()
+                                .sort_values("Importe DRC", ascending=False)
+                                .drop_duplicates(subset="rfc")
+                                .set_index("rfc")["DESC. PARTIDA GENÉRICA"]
+                                .to_dict()
+                            )
+                            _prov_pdf["_partida_prin"] = _prov_pdf["rfc"].map(_top_pp).fillna("")
+                except Exception:
+                    pass
+
+                # Cabecera: #(7) | Proveedor(65) | Cttos.(13) | Monto(28) | %UC(13) | Partida(59) = 185
+                _cw_pr = [7, 65, 13, 28, 13, 59]
+                _hd_pr = ["#", "Proveedor", "Cttos.", "Monto", "% UC", "Principal partida adquirida"]
+                _pdf_obj.set_font("Helvetica", "B", 7)
+                _pdf_obj.set_fill_color(11, 84, 69)
+                _pdf_obj.set_text_color(255, 255, 255)
+                for _ci, (_hd, _cw) in enumerate(zip(_hd_pr, _cw_pr)):
+                    _al = "C" if _ci in (0, 2, 4) else ("R" if _ci == 3 else "L")
+                    _pdf_obj.cell(_cw, _rh_t, _s(_hd), border=0, align=_al, fill=True)
+                _pdf_obj.ln(_rh_t)
+
+                _pdf_obj.set_font("Helvetica", "", 6.5)
+                _pdf_obj.set_text_color(23, 27, 25)
+                for _ri, _row in _prov_pdf.iterrows():
+                    if _ri % 2 == 0:
+                        _pdf_obj.set_fill_color(244, 246, 245)
+                    else:
+                        _pdf_obj.set_fill_color(255, 255, 255)
+                    _nm = str(_row["Proveedor o contratista"])
+                    _nm = (_nm[:41] + "...") if len(_nm) > 42 else _nm
+                    _pp = str(_row["_partida_prin"])
+                    _pp = (_pp[:38] + "...") if len(_pp) > 39 else _pp
+                    _pct_pr = (_row["_monto"] / _monto_mr * 100) if _monto_mr > 0 else 0.0
+                    _pdf_obj.cell(_cw_pr[0], _rh_t, str(_ri + 1),                    border=0, align="C", fill=True)
+                    _pdf_obj.cell(_cw_pr[1], _rh_t, _s(_nm),                          border=0, align="L", fill=True)
+                    _pdf_obj.cell(_cw_pr[2], _rh_t, str(int(_row["_cttos"])),         border=0, align="C", fill=True)
+                    _pdf_obj.cell(_cw_pr[3], _rh_t, f"${_row['_monto']/1e6:,.1f}M",  border=0, align="R", fill=True)
+                    _pdf_obj.cell(_cw_pr[4], _rh_t, f"{_pct_pr:.1f}%",               border=0, align="C", fill=True)
+                    _pdf_obj.cell(_cw_pr[5], _rh_t, _s(_pp),                          border=0, align="L", fill=True)
+                    _pdf_obj.ln(_rh_t)
+
+                # ── B-2) Top-15 Partidas CUCoP ────────────────────────────
+                _pdf_obj.ln(4)
+                _pdf_obj.set_font("Helvetica", "B", 9)
+                _pdf_obj.set_text_color(11, 84, 69)
+                _pdf_obj.cell(0, 5, _s("Gasto por Partida Presupuestaria (CUCoP)"),
+                              new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.ln(1)
+
+                _gasto_pdf_ok = False
+                _gasto_pdf    = None
+                try:
+                    if len(df_cucop) > 0 and "Partida específica" in _dff_sel.columns:
+                        _ge_pdf = _dff_sel[["Partida específica", "Importe DRC"]].copy()
+                        _ge_pdf["_ll"] = _ge_pdf["Partida específica"].str.split(",")
+                        _ge_pdf["_nn"] = _ge_pdf["_ll"].apply(len)
+                        _ge_pdf["Importe DRC"] = (
+                            pd.to_numeric(_ge_pdf["Importe DRC"], errors="coerce") / _ge_pdf["_nn"]
+                        )
+                        _ge_pdf = _ge_pdf.explode("_ll")
+                        _ge_pdf["Partida específica"] = _ge_pdf["_ll"].str.strip().str.zfill(5)
+                        if ("DESC. PARTIDA GENÉRICA" in df_cucop.columns
+                                and "PARTIDA GENÉRICA" in df_cucop.columns):
+                            _ge_pdf = _ge_pdf.merge(
+                                df_cucop[["PARTIDA ESPECÍFICA", "PARTIDA GENÉRICA",
+                                          "DESC. PARTIDA GENÉRICA"]]
+                                .drop_duplicates(subset=["PARTIDA ESPECÍFICA"]),
+                                left_on="Partida específica",
+                                right_on="PARTIDA ESPECÍFICA",
+                                how="left",
+                            )
+                            _ge_pdf["_etq_g"] = (
+                                _ge_pdf["PARTIDA GENÉRICA"].fillna("") + " — " +
+                                _ge_pdf["DESC. PARTIDA GENÉRICA"].fillna("Sin descripción")
+                            )
+                            _gasto_pdf = (
+                                _ge_pdf.groupby("_etq_g")["Importe DRC"]
+                                .sum().sort_values(ascending=False)
+                                .head(15).reset_index()
+                            )
+                            _gasto_pdf.columns = ["Partida", "Monto"]
+                            _gasto_pdf["Pct"] = (
+                                (_gasto_pdf["Monto"] / _monto_mr * 100) if _monto_mr > 0 else 0.0
+                            ).round(1)
+                            _gasto_pdf_ok = True
+                except Exception:
+                    pass
+
+                if _gasto_pdf_ok and _gasto_pdf is not None:
+                    # Partida genérica(135) | Monto total(32) | % del total(18) = 185
+                    _cw_gp = [135, 32, 18]
+                    _hd_gp = ["Partida genérica", "Monto total", "% del total"]
+                    _pdf_obj.set_font("Helvetica", "B", 7)
+                    _pdf_obj.set_fill_color(11, 84, 69)
+                    _pdf_obj.set_text_color(255, 255, 255)
+                    for _ci, (_hd, _cw) in enumerate(zip(_hd_gp, _cw_gp)):
+                        _pdf_obj.cell(_cw, _rh_t, _s(_hd), border=0,
+                                      align="L" if _ci == 0 else "R", fill=True)
+                    _pdf_obj.ln(_rh_t)
+
+                    _pdf_obj.set_font("Helvetica", "", 6.5)
+                    _pdf_obj.set_text_color(23, 27, 25)
+                    for _ri, _row in _gasto_pdf.iterrows():
+                        if _ri % 2 == 0:
+                            _pdf_obj.set_fill_color(244, 246, 245)
+                        else:
+                            _pdf_obj.set_fill_color(255, 255, 255)
+                        _pg = str(_row["Partida"])
+                        _pg = (_pg[:106] + "...") if len(_pg) > 107 else _pg
+                        _pdf_obj.cell(_cw_gp[0], _rh_t, _s(_pg),                         border=0, align="L", fill=True)
+                        _pdf_obj.cell(_cw_gp[1], _rh_t, f"${_row['Monto']/1e6:,.1f}M",   border=0, align="R", fill=True)
+                        _pdf_obj.cell(_cw_gp[2], _rh_t, f"{_row['Pct']:.1f}%",            border=0, align="R", fill=True)
+                        _pdf_obj.ln(_rh_t)
+                else:
+                    _pdf_obj.set_font("Helvetica", "I", 8)
+                    _pdf_obj.set_text_color(134, 134, 136)
+                    _pdf_obj.cell(0, 5, _s("Sin datos de partidas disponibles para esta UC."),
+                                  new_x="LMARGIN", new_y="NEXT")
+
+                # ── B-3) Donut Concentración de Proveedores (imagen) ──────
+                if _fig_donut_mr is not None:
                     try:
-                        _ib = _cf.to_image(format="png", width=1000, height=_ch, scale=1.5)
+                        _ib_donut = _fig_donut_mr.to_image(
+                            format="png", width=1000, height=370, scale=1.5
+                        )
+                        _pdf_obj.ln(4)
                         _pdf_obj.set_font("Helvetica", "B", 9)
                         _pdf_obj.set_text_color(11, 84, 69)
-                        _pdf_obj.cell(0, 5, _s(_ct), new_x="LMARGIN", new_y="NEXT")
-                        _pdf_obj.image(_io_mr.BytesIO(_ib), w=_epw)
+                        _pdf_obj.cell(0, 5, _s("Concentración de Proveedores en la UC"),
+                                      new_x="LMARGIN", new_y="NEXT")
+                        _pdf_obj.image(_io_mr.BytesIO(_ib_donut), w=_epw)
                         _pdf_obj.ln(3)
                     except Exception:
                         pass
