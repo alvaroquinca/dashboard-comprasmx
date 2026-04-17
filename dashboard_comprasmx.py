@@ -6059,32 +6059,34 @@ def pagina_mapa_riesgo():
                             _m_p  = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
                             _niv_p = _dr_p.get("Nivel de Riesgo", pd.Series(dtype=str))
                             _n_crit_p = _niv_p.str.contains("vigente", case=False, na=False).sum()
-                            _n_alto_p = _niv_p.str.contains("suspendida", case=False, na=False).sum()
-                            _n_med_p  = _n_p - _n_crit_p - _n_alto_p
+                            # Empresa inhabilitada principal (por monto) — columna "Empresa" del lookup SABG
+                            _emp_san_nom, _emp_san_total = None, 0
+                            if "Empresa" in _dr_p.columns:
+                                _imp_san_s = pd.to_numeric(_dr_p["Importe DRC"], errors="coerce")
+                                _grp_san   = _dr_p.assign(__i=_imp_san_s).groupby("Empresa")["__i"].sum()
+                                if not _grp_san.empty:
+                                    _emp_san_nom   = _grp_san.idxmax()
+                                    _emp_san_total = _dr_p["Empresa"].nunique()
                             _pdf_obj.cell(0, 5.5,
                                 _s(f"\u2022  Proveedores sancionados (SABG) \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
                                 new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_font("Helvetica", "", 8)
                             _pdf_obj.set_left_margin(22)
-                            _sub_san = []
                             if _n_crit_p > 0:
-                                _sub_san.append(
-                                    f"Riesgo crítico — inhabilitación vigente al momento del fallo: "
-                                    f"{_n_crit_p} contrato(s). Posible violación a la LAASSP (Art. 46)."
+                                _txt_san = (
+                                    f"Inhabilitaci\u00f3n vigente al momento del fallo: "
+                                    f"{_n_crit_p} contrato(s). Art. 71 fracci\u00f3n V."
                                 )
-                            if _n_alto_p > 0:
-                                _sub_san.append(
-                                    f"Riesgo alto — inhabilitación suspendida judicialmente: "
-                                    f"{_n_alto_p} contrato(s). Proceso sancionador aún en curso."
-                                )
-                            if _n_med_p  > 0:
-                                _sub_san.append(
-                                    f"Historial de inhabilitación (sanción concluida): "
-                                    f"{_n_med_p} contrato(s)."
-                                )
-                            for _sb in _sub_san:
+                                if _emp_san_nom is not None:
+                                    _nom_san = str(_emp_san_nom)
+                                    _nom_san = (_nom_san[:55] + "...") if len(_nom_san) > 56 else _nom_san
+                                    if _emp_san_total > 1:
+                                        _txt_san += (f" Empresa principal: {_nom_san} "
+                                                     f"(y {_emp_san_total - 1} m\u00e1s).")
+                                    else:
+                                        _txt_san += f" Empresa inhabilitada: {_nom_san}."
                                 _pdf_obj.set_x(22)
-                                _pdf_obj.multi_cell(_epw - 7, 4, _s(_sb),
+                                _pdf_obj.multi_cell(_epw - 7, 4, _s(_txt_san),
                                                     new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_left_margin(15)
 
