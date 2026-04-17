@@ -6075,7 +6075,8 @@ def pagina_mapa_riesgo():
                             if _n_crit_p > 0:
                                 _txt_san = (
                                     f"Inhabilitaci\u00f3n vigente al momento del fallo: "
-                                    f"{_n_crit_p} contrato(s). Art. 71 fracci\u00f3n V."
+                                    f"{_n_crit_p} contrato(s). Posible violaci\u00f3n a la LAASSP -- "
+                                    f"Art. 71 fracci\u00f3n V."
                                 )
                                 if _emp_san_nom is not None:
                                     _nom_san = str(_emp_san_nom)
