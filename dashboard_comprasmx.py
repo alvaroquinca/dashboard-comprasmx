@@ -5500,9 +5500,12 @@ def pagina_mapa_riesgo():
         )
         _fig_pA2.update_layout(
             font=plotly_font(), title_font_color=IMSS_VERDE_OSC,
-            legend=dict(orientation="v", font=dict(family="Noto Sans, sans-serif", size=11),
-                        x=1.01, y=0.5, xanchor="left"),
-            margin=dict(r=160),
+            legend=dict(
+                orientation="h",
+                font=dict(family="Noto Sans, sans-serif", size=10),
+                x=0.5, y=-0.10, xanchor="center", yanchor="top",
+            ),
+            margin=dict(r=20, l=20, b=75),
         )
         _col_pA2.plotly_chart(_fig_pA2, use_container_width=True)
 
@@ -5950,14 +5953,13 @@ def pagina_mapa_riesgo():
                 import io as _io_mr
 
                 def _s(text):
-                    """Sanitize string for fpdf Helvetica (latin-1 safe)."""
+                    """Sanitize string for fpdf Helvetica (Windows-1252/cp1252 safe).
+                    Soporta guion largo (—, 0x97), viñeta (•, 0x95) y guion medio (–, 0x96)."""
                     t = str(text)
-                    t = (t.replace('\u2014', '--').replace('\u2013', '-')
-                          .replace('\u2026', '...').replace('\u201c', '"')
-                          .replace('\u201d', '"')
-                          .replace('\u2018', "'")
-                          .replace('\u2019', "'"))
-                    return t.encode('latin-1', errors='replace').decode('latin-1')
+                    t = (t.replace('\u2026', '...')
+                          .replace('\u201c', '"').replace('\u201d', '"')
+                          .replace('\u2018', "'").replace('\u2019', "'"))
+                    return t.encode('cp1252', errors='replace').decode('cp1252')
 
                 # ── Carta vertical, márgenes 15 mm ──────────────────────
                 _pdf_obj = _FPDF_MR(orientation="P", unit="mm", format="letter")
@@ -5977,18 +5979,17 @@ def pagina_mapa_riesgo():
                 _pdf_obj.set_font("Helvetica", "B", 14)
                 _pdf_obj.set_text_color(11, 84, 69)
                 _pdf_obj.multi_cell(
-                    0, 8, _s(f"Perfil UC -- {str(_label_mr)[:80]}"),
+                    0, 8, _s(f"Perfil UC \u2014 {str(_label_mr)[:80]}"),
                     new_x="LMARGIN", new_y="NEXT",
                 )
                 _pdf_obj.set_font("Helvetica", "", 9)
                 _pdf_obj.set_text_color(134, 134, 136)
                 if _tipo_vista_mr == "UC espec\u00edfica":
                     _pdf_meta_str = _s(
-                        f"Tipo UC: {_meta_tipo_mr or '--'}   |   "
-                        f"Adscripcion: {_meta_adsc_mr or '--'}"
+                        f"Tipo UC: {_meta_tipo_mr or '\u2014'}   |   {_meta_adsc_mr or '\u2014'}"
                     )
                 else:
-                    _pdf_meta_str = _s(f"Adscripcion: {_meta_adsc_mr}")
+                    _pdf_meta_str = _s(str(_meta_adsc_mr or ""))
                 _pdf_obj.cell(0, 5, _pdf_meta_str, new_x="LMARGIN", new_y="NEXT")
                 _hr(color=(11, 84, 69), lw=0.4, gap_before=2, gap_after=5)
 
@@ -6029,39 +6030,221 @@ def pagina_mapa_riesgo():
                 # ── Riesgos detectados ────────────────────────────────────
                 _pdf_obj.set_font("Helvetica", "B", 10)
                 _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 6, "Riesgos especificos detectados", new_x="LMARGIN", new_y="NEXT")
+                _pdf_obj.cell(0, 6, _s("Riesgos específicos detectados"),
+                              new_x="LMARGIN", new_y="NEXT")
                 _pdf_obj.set_text_color(23, 27, 25)
                 if not _riesgos_activos:
                     _pdf_obj.set_font("Helvetica", "", 9)
-                    _pdf_obj.cell(0, 5, "Sin alertas de riesgo detectadas.", new_x="LMARGIN", new_y="NEXT")
+                    _pdf_obj.cell(0, 5, _s("Sin alertas de riesgo detectadas."),
+                                  new_x="LMARGIN", new_y="NEXT")
                 else:
-                    _RISK_LABELS_PDF = {
-                        "san":       "Proveedores sancionados (SABG)",
-                        "efos_def":  "EFOS definitivo (Art. 69-B CFF)",
-                        "efos_pre":  "EFOS presunto (Art. 69-B CFF)",
-                        "reciente":  "Empresa de reciente creacion",
-                        "umbral":    "Contratos cerca del umbral legal",
-                        "frag_dia":  "Fragmentacion -- mismo dia",
-                        "brecha_lp": "Baja proporcion de LP",
-                        "conc_ad":   "Alta concentracion en AD",
-                        "exc_alto":  "Excepcion Art. 55 (>30%)",
-                    }
                     for _tr_p, _dr_p in _riesgos_activos:
-                        _lbl_p = _RISK_LABELS_PDF.get(_tr_p, _tr_p)
-                        if isinstance(_dr_p, tuple):
-                            _line_p = f"  * {_lbl_p}: {len(_dr_p[0])} grupo(s)"
-                        elif isinstance(_dr_p, pd.DataFrame):
-                            _m_p = pd.to_numeric(
-                                _dr_p.get("Importe DRC", pd.Series(dtype=float)),
-                                errors="coerce"
-                            ).sum()
-                            _line_p = f"  * {_lbl_p}: {len(_dr_p)} contrato(s), ${_m_p/1e6:,.1f} M MXN"
-                        elif isinstance(_dr_p, (int, float)):
-                            _line_p = f"  * {_lbl_p}: {_dr_p:.1f}%"
-                        else:
-                            _line_p = f"  * {_lbl_p}"
-                        _pdf_obj.set_font("Helvetica", "", 9)
-                        _pdf_obj.cell(0, 5, _s(_line_p), new_x="LMARGIN", new_y="NEXT")
+
+                        # Viñeta + encabezado en negrita
+                        _pdf_obj.set_font("Helvetica", "B", 8.5)
+
+                        if _tr_p == "san":
+                            _n_p  = len(_dr_p)
+                            _m_p  = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _niv_p = _dr_p.get("Nivel de Riesgo", pd.Series(dtype=str))
+                            _n_crit_p = _niv_p.str.contains("vigente", case=False, na=False).sum()
+                            _n_alto_p = _niv_p.str.contains("suspendida", case=False, na=False).sum()
+                            _n_med_p  = _n_p - _n_crit_p - _n_alto_p
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Proveedores sancionados (SABG) \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _sub_san = []
+                            if _n_crit_p > 0:
+                                _sub_san.append(
+                                    f"Riesgo crítico — inhabilitación vigente al momento del fallo: "
+                                    f"{_n_crit_p} contrato(s). Posible violación a la LAASSP (Art. 46)."
+                                )
+                            if _n_alto_p > 0:
+                                _sub_san.append(
+                                    f"Riesgo alto — inhabilitación suspendida judicialmente: "
+                                    f"{_n_alto_p} contrato(s). Proceso sancionador aún en curso."
+                                )
+                            if _n_med_p  > 0:
+                                _sub_san.append(
+                                    f"Historial de inhabilitación (sanción concluida): "
+                                    f"{_n_med_p} contrato(s)."
+                                )
+                            for _sb in _sub_san:
+                                _pdf_obj.set_x(22)
+                                _pdf_obj.multi_cell(_epw - 7, 4, _s(_sb),
+                                                    new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "efos_def":
+                            _n_p = len(_dr_p)
+                            _m_p = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  EFOS Definitivo (Art. 69-B CFF) \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("Empresa con operaciones simuladas confirmadas por el SAT. "
+                                   "Las facturas emitidas no son válidas fiscalmente ni acreditan "
+                                   "la efectiva prestación del servicio o entrega del bien contratado."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "efos_pre":
+                            _n_p = len(_dr_p)
+                            _m_p = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  EFOS Presunto (Art. 69-B CFF) \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("Empresa en proceso de presunción de operaciones simuladas por el SAT. "
+                                   "El procedimiento aún no ha concluido; el contribuyente está en etapa "
+                                   "de aclaración o controversia."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "reciente":
+                            _n_p  = len(_dr_p)
+                            _m_p  = pd.to_numeric(_dr_p.get("Importe DRC", pd.Series(dtype=float)), errors="coerce").sum()
+                            _edad_col_p = "_edad_mr" if "_edad_mr" in _dr_p.columns else None
+                            _edad_min_p = (int(_dr_p[_edad_col_p].min())
+                                           if _edad_col_p and not _dr_p[_edad_col_p].isna().all()
+                                           else None)
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Empresa de reciente creación \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _det_rc = (
+                                "Contratos adjudicados a empresas con menos de un año de constitución "
+                                "al inicio del contrato (umbral: 365 días). "
+                                "Pueden ser empresas creadas ad hoc para obtener contratos públicos "
+                                "sin trayectoria comprobable."
+                            )
+                            if _edad_min_p is not None:
+                                _det_rc += f" Empresa de menor antigüedad detectada: {_edad_min_p} día(s)."
+                            _pdf_obj.multi_cell(_epw - 7, 4, _s(_det_rc),
+                                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "umbral":
+                            _n_p = len(_dr_p)
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Contratos cerca del umbral legal \u2014 {_n_p} contrato(s)"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("Contratos con importe entre el 90 % y 99 % del umbral establecido "
+                                   "en el PEF para cambio de modalidad de contratación. "
+                                   "Pueden indicar fraccionamiento intencional para evitar licitación pública."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "frag_dia":
+                            _g_fr_p, _dff_fr_p = _dr_p
+                            _n_grupos_p  = len(_g_fr_p)
+                            _tot_cttos_p = int(_g_fr_p["Contratos"].sum())
+                            _tot_monto_p = _g_fr_p["Monto_total"].sum()
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Fragmentación en el mismo día \u2014 "
+                                   f"{_n_grupos_p} grupo(s), {_tot_cttos_p} contratos, "
+                                   f"${_tot_monto_p/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("Se detectaron tres o más adjudicaciones directas al mismo proveedor "
+                                   "en la misma fecha de inicio. Posible fraccionamiento para eludir "
+                                   "umbrales de licitación (Art. 50 LAASSP). Grupos principales:"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 7.5)
+                            for _, _gr in _g_fr_p.head(5).iterrows():
+                                _pnm_p = str(_gr.get("Proveedor o contratista", ""))
+                                _pnm_p = (_pnm_p[:38] + "…") if len(_pnm_p) > 39 else _pnm_p
+                                _ucn_p = str(_gr.get("Nombre de la UC", ""))
+                                _ucn_p = (_ucn_p[:28] + "…") if len(_ucn_p) > 29 else _ucn_p
+                                _fec_p = str(_gr.get("_fstr_fr", ""))
+                                _ctn_p = int(_gr.get("Contratos", 0))
+                                _mtn_p = float(_gr.get("Monto_total", 0))
+                                _pdf_obj.set_x(25)
+                                _pdf_obj.cell(0, 4.5,
+                                    _s(f"- {_pnm_p} | {_ucn_p} | {_fec_p}: "
+                                       f"{_ctn_p} contratos, ${_mtn_p/1e6:,.2f} M MXN"),
+                                    new_x="LMARGIN", new_y="NEXT")
+                            if _n_grupos_p > 5:
+                                _pdf_obj.set_x(25)
+                                _pdf_obj.cell(0, 4.5,
+                                    _s(f"  … y {_n_grupos_p - 5} grupo(s) adicional(es)."),
+                                    new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "brecha_lp":
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Baja proporción de Licitación Pública \u2014 "
+                                   f"{_dr_p:.1f}% del monto (meta mínima: 65 %)"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("El Decreto presidencial del 18 de noviembre de 2024 establece que "
+                                   "al menos el 65 % del monto de adquisiciones debe adjudicarse mediante "
+                                   "licitación pública. El nivel actual no alcanza este umbral."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "conc_ad":
+                            _pct_cg, _ser_cg = _dr_p
+                            try:
+                                _top_idx_cg   = _ser_cg.idxmax()
+                                _top_nom_cg   = _top_idx_cg[1] if isinstance(_top_idx_cg, tuple) else str(_top_idx_cg)
+                                _top_monto_cg = float(_ser_cg.max())
+                            except Exception:
+                                _top_nom_cg   = "N/D"
+                                _top_monto_cg = 0.0
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Alta concentración en adjudicaciones directas \u2014 "
+                                   f"{_pct_cg:.1f}% del monto total en un solo proveedor"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _nm_cg = str(_top_nom_cg)
+                            _nm_cg = (_nm_cg[:60] + "…") if len(_nm_cg) > 61 else _nm_cg
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s(f"Proveedor con mayor concentración: {_nm_cg} "
+                                   f"(${_top_monto_cg/1e6:,.1f} M MXN). "
+                                   "La concentración excesiva en un solo proveedor puede indicar "
+                                   "captura del proceso de contratación o falta de competencia real."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        elif _tr_p == "exc_alto":
+                            _pdf_obj.cell(0, 5.5,
+                                _s(f"\u2022  Excepción Art. 55/42 LAASSP \u2014 "
+                                   f"{_dr_p:.1f}% del monto por contratación de excepción (umbral: 30 %)"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_font("Helvetica", "", 8)
+                            _pdf_obj.set_left_margin(22)
+                            _pdf_obj.set_x(22)
+                            _pdf_obj.multi_cell(_epw - 7, 4,
+                                _s("El monto contratado mediante procedimientos de excepción supera "
+                                   "el límite del 30 % establecido por la normativa. "
+                                   "Este indicador es evaluado trimestralmente por la DMII."),
+                                new_x="LMARGIN", new_y="NEXT")
+                            _pdf_obj.set_left_margin(15)
+
+                        _pdf_obj.ln(1.5)
                 _hr(gap_before=2, gap_after=5)
 
                 # ── Gráficas ─────────────────────────────────────────────
@@ -6118,29 +6301,29 @@ def pagina_mapa_riesgo():
                         )
                         _cp_pdf = _cp_pdf.explode("_ll")
                         _cp_pdf["Partida específica"] = _cp_pdf["_ll"].str.strip().str.zfill(5)
-                        if "DESC. PARTIDA GENÉRICA" in df_cucop.columns:
+                        if "DESC. PARTIDA ESPECÍFICA" in df_cucop.columns:
                             _cp_pdf = _cp_pdf.merge(
-                                df_cucop[["PARTIDA ESPECÍFICA", "DESC. PARTIDA GENÉRICA"]]
+                                df_cucop[["PARTIDA ESPECÍFICA", "DESC. PARTIDA ESPECÍFICA"]]
                                 .drop_duplicates(subset=["PARTIDA ESPECÍFICA"]),
                                 left_on="Partida específica",
                                 right_on="PARTIDA ESPECÍFICA",
                                 how="left",
                             )
                             _top_pp = (
-                                _cp_pdf.groupby(["rfc", "DESC. PARTIDA GENÉRICA"])["Importe DRC"]
+                                _cp_pdf.groupby(["rfc", "DESC. PARTIDA ESPECÍFICA"])["Importe DRC"]
                                 .sum().reset_index()
                                 .sort_values("Importe DRC", ascending=False)
                                 .drop_duplicates(subset="rfc")
-                                .set_index("rfc")["DESC. PARTIDA GENÉRICA"]
+                                .set_index("rfc")["DESC. PARTIDA ESPECÍFICA"]
                                 .to_dict()
                             )
                             _prov_pdf["_partida_prin"] = _prov_pdf["rfc"].map(_top_pp).fillna("")
                 except Exception:
                     pass
 
-                # Cabecera: #(7) | Proveedor(65) | Cttos.(13) | Monto(28) | %UC(13) | Partida(59) = 185
-                _cw_pr = [7, 65, 13, 28, 13, 59]
-                _hd_pr = ["#", "Proveedor", "Cttos.", "Monto", "% UC", "Principal partida adquirida"]
+                # Cabecera: #(6) | Proveedor(52) | Contratos(14) | Monto(27) | %UC(13) | Partida(73) = 185
+                _cw_pr = [6, 52, 14, 27, 13, 73]
+                _hd_pr = ["#", "Proveedor", "Contratos", "Monto", "% UC", "Principal partida adquirida"]
                 _pdf_obj.set_font("Helvetica", "B", 7)
                 _pdf_obj.set_fill_color(11, 84, 69)
                 _pdf_obj.set_text_color(255, 255, 255)
@@ -6157,9 +6340,9 @@ def pagina_mapa_riesgo():
                     else:
                         _pdf_obj.set_fill_color(255, 255, 255)
                     _nm = str(_row["Proveedor o contratista"])
-                    _nm = (_nm[:41] + "...") if len(_nm) > 42 else _nm
+                    _nm = (_nm[:33] + "…") if len(_nm) > 34 else _nm
                     _pp = str(_row["_partida_prin"])
-                    _pp = (_pp[:38] + "...") if len(_pp) > 39 else _pp
+                    _pp = (_pp[:50] + "…") if len(_pp) > 51 else _pp
                     _pct_pr = (_row["_monto"] / _monto_mr * 100) if _monto_mr > 0 else 0.0
                     _pdf_obj.cell(_cw_pr[0], _rh_t, str(_ri + 1),                    border=0, align="C", fill=True)
                     _pdf_obj.cell(_cw_pr[1], _rh_t, _s(_nm),                          border=0, align="L", fill=True)
@@ -6169,11 +6352,11 @@ def pagina_mapa_riesgo():
                     _pdf_obj.cell(_cw_pr[5], _rh_t, _s(_pp),                          border=0, align="L", fill=True)
                     _pdf_obj.ln(_rh_t)
 
-                # ── B-2) Top-15 Partidas CUCoP ────────────────────────────
+                # ── B-2) Top-15 Partidas Presupuestarias ─────────────────
                 _pdf_obj.ln(4)
                 _pdf_obj.set_font("Helvetica", "B", 9)
                 _pdf_obj.set_text_color(11, 84, 69)
-                _pdf_obj.cell(0, 5, _s("Gasto por Partida Presupuestaria (CUCoP)"),
+                _pdf_obj.cell(0, 5, _s("Gasto por Partida Presupuestaria"),
                               new_x="LMARGIN", new_y="NEXT")
                 _pdf_obj.ln(1)
 
@@ -6181,7 +6364,9 @@ def pagina_mapa_riesgo():
                 _gasto_pdf    = None
                 try:
                     if len(df_cucop) > 0 and "Partida específica" in _dff_sel.columns:
-                        _ge_pdf = _dff_sel[["Partida específica", "Importe DRC"]].copy()
+                        _ge_pdf = _dff_sel[
+                            ["Partida específica", "Importe DRC", "Proveedor o contratista"]
+                        ].copy()
                         _ge_pdf["_ll"] = _ge_pdf["Partida específica"].str.split(",")
                         _ge_pdf["_nn"] = _ge_pdf["_ll"].apply(len)
                         _ge_pdf["Importe DRC"] = (
@@ -6212,20 +6397,44 @@ def pagina_mapa_riesgo():
                             _gasto_pdf["Pct"] = (
                                 (_gasto_pdf["Monto"] / _monto_mr * 100) if _monto_mr > 0 else 0.0
                             ).round(1)
+                            # Principal proveedor por partida
+                            _top_prov_gp = (
+                                _ge_pdf.groupby(["_etq_g", "Proveedor o contratista"])["Importe DRC"]
+                                .sum().reset_index()
+                                .sort_values("Importe DRC", ascending=False)
+                                .drop_duplicates(subset="_etq_g")
+                                .rename(columns={
+                                    "_etq_g": "Partida",
+                                    "Proveedor o contratista": "_prov_prin",
+                                    "Importe DRC": "_monto_prov",
+                                })[["Partida", "_prov_prin", "_monto_prov"]]
+                            )
+                            _gasto_pdf = _gasto_pdf.merge(_top_prov_gp, on="Partida", how="left")
+                            _gasto_pdf["_prov_disp"] = _gasto_pdf.apply(
+                                lambda _r: (
+                                    (str(_r["_prov_prin"])[:28] + "…")
+                                    if len(str(_r["_prov_prin"])) > 29
+                                    else str(_r["_prov_prin"])
+                                ) + (
+                                    f" (${_r['_monto_prov']/1e6:,.1f}M)"
+                                    if pd.notna(_r["_monto_prov"]) and _r["_monto_prov"] > 0
+                                    else ""
+                                ), axis=1
+                            )
                             _gasto_pdf_ok = True
                 except Exception:
                     pass
 
                 if _gasto_pdf_ok and _gasto_pdf is not None:
-                    # Partida genérica(135) | Monto total(32) | % del total(18) = 185
-                    _cw_gp = [135, 32, 18]
-                    _hd_gp = ["Partida genérica", "Monto total", "% del total"]
+                    # Partida genérica(90) | Monto(27) | %(16) | Principal proveedor(52) = 185
+                    _cw_gp = [90, 27, 16, 52]
+                    _hd_gp = ["Partida genérica", "Monto total", "% total", "Principal proveedor"]
                     _pdf_obj.set_font("Helvetica", "B", 7)
                     _pdf_obj.set_fill_color(11, 84, 69)
                     _pdf_obj.set_text_color(255, 255, 255)
                     for _ci, (_hd, _cw) in enumerate(zip(_hd_gp, _cw_gp)):
-                        _pdf_obj.cell(_cw, _rh_t, _s(_hd), border=0,
-                                      align="L" if _ci == 0 else "R", fill=True)
+                        _al = "L" if _ci in (0, 3) else "R"
+                        _pdf_obj.cell(_cw, _rh_t, _s(_hd), border=0, align=_al, fill=True)
                     _pdf_obj.ln(_rh_t)
 
                     _pdf_obj.set_font("Helvetica", "", 6.5)
@@ -6236,10 +6445,13 @@ def pagina_mapa_riesgo():
                         else:
                             _pdf_obj.set_fill_color(255, 255, 255)
                         _pg = str(_row["Partida"])
-                        _pg = (_pg[:106] + "...") if len(_pg) > 107 else _pg
+                        _pg = (_pg[:70] + "…") if len(_pg) > 71 else _pg
+                        _pd_pv = str(_row.get("_prov_disp", ""))
+                        _pd_pv = (_pd_pv[:48] + "…") if len(_pd_pv) > 49 else _pd_pv
                         _pdf_obj.cell(_cw_gp[0], _rh_t, _s(_pg),                         border=0, align="L", fill=True)
                         _pdf_obj.cell(_cw_gp[1], _rh_t, f"${_row['Monto']/1e6:,.1f}M",   border=0, align="R", fill=True)
                         _pdf_obj.cell(_cw_gp[2], _rh_t, f"{_row['Pct']:.1f}%",            border=0, align="R", fill=True)
+                        _pdf_obj.cell(_cw_gp[3], _rh_t, _s(_pd_pv),                       border=0, align="L", fill=True)
                         _pdf_obj.ln(_rh_t)
                 else:
                     _pdf_obj.set_font("Helvetica", "I", 8)
@@ -6264,11 +6476,15 @@ def pagina_mapa_riesgo():
                         pass
 
                 # ── Footer ───────────────────────────────────────────────
+                _fecha_elab_pdf = pd.Timestamp.today().strftime("%d/%m/%Y")
                 _pdf_obj.set_font("Helvetica", "I", 7)
                 _pdf_obj.set_text_color(134, 134, 136)
                 _pdf_obj.cell(
                     0, 5,
-                    _s("Division de Monitoreo de la Integridad Institucional -- IMSS | ComprasMX 2026"),
+                    _s(
+                        "División de Monitoreo de la Integridad Institucional \u2014 IMSS"
+                        f"  |  ComprasMX 2026  |  Elaborado: {_fecha_elab_pdf}"
+                    ),
                     align="C",
                 )
 
