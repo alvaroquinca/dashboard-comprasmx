@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-16
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-17
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -6875,6 +6875,174 @@ def pagina_mapa_riesgo():
             column_config=_col_cfg_mr,
             hide_index=True,
         )
+
+    # ── Exportar listado de contratos a PDF ───────────────────────────────────
+    _pdf_lst_flag  = f"_pdf_lst_flag_{_label_mr}"
+    _pdf_lst_state = f"_pdf_lst_state_{_label_mr}"
+
+    _c1_lst, _c2_lst = st.columns([1.3, 1])
+    with _c1_lst:
+        if st.session_state.get(_pdf_lst_state):
+            st.download_button(
+                label="\U0001f4e5 Descargar listado PDF",
+                data=st.session_state[_pdf_lst_state],
+                file_name=f"listado_{str(_label_mr)[:40].replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                key=f"dl_lst_pdf_{_label_mr}",
+            )
+        else:
+            if st.button(
+                "\U0001f5a8\ufe0f Exportar listado a PDF",
+                key=f"btn_lst_pdf_{_label_mr}",
+                help="Genera un PDF tama\u00f1o carta horizontal listo para imprimir",
+            ):
+                st.session_state[_pdf_lst_flag] = True
+                st.rerun()
+    with _c2_lst:
+        if st.session_state.get(_pdf_lst_state):
+            if st.button("\U0001f504 Regenerar listado PDF",
+                         key=f"regen_lst_pdf_{_label_mr}"):
+                del st.session_state[_pdf_lst_state]
+                st.rerun()
+
+    if st.session_state.get(_pdf_lst_flag):
+        with st.spinner("Generando PDF del listado de contratos\u2026 \u23f3"):
+            try:
+                from fpdf import FPDF as _FPDF_LT
+
+                def _sl(t):
+                    """Sanitiza texto para Helvetica FPDF2 (rango Latin-1 seguro)."""
+                    t = str(t)
+                    t = (t.replace('\u2022', '\u00bb')
+                          .replace('\u2014', '--').replace('\u2013', '-')
+                          .replace('\u2026', '...')
+                          .replace('\u201c', '"').replace('\u201d', '"')
+                          .replace('\u2018', "'").replace('\u2019', "'"))
+                    return t.encode('latin-1', errors='replace').decode('latin-1')
+
+                _yr_lt   = ", ".join(str(a) for a in anios_sel)
+                _inst_lt = inst_sel if inst_sel != "Todas" else "APF"
+                _lbl_lt  = str(_label_mr)
+                _con_uc  = (_tipo_vista_mr != "UC espec\u00edfica")
+
+                # ── Definición de columnas según vista ──────────────────────
+                # Carta horizontal: 279.4 mm × 215.9 mm, márgenes 12 mm → ≈ 255 mm útiles
+                if _con_uc:
+                    # Adscripción: incluye columna UC
+                    _cw = [7, 38, 50, 18, 26, 22, 94]   # suma = 255
+                    _ch = ["#", "UC", "Proveedor o contratista", "Tipo",
+                           "Importe (MXN)", "Fecha inicio", "Descripci\u00f3n"]
+                    _cs = [None, "Nombre de la UC", "Proveedor o contratista",
+                           "Tipo Simplificado", "Importe DRC",
+                           "Fecha de inicio del contrato", "Descripci\u00f3n del contrato"]
+                    _ca = ["C", "L", "L", "C", "R", "C", "L"]
+                    _ct = [0, 20, 26, 11, 0, 10, 52]   # máx. chars por columna (0=sin truncar)
+                else:
+                    # UC específica
+                    _cw = [8, 63, 20, 28, 22, 114]       # suma = 255
+                    _ch = ["#", "Proveedor o contratista", "Tipo",
+                           "Importe (MXN)", "Fecha inicio", "Descripci\u00f3n"]
+                    _cs = [None, "Proveedor o contratista", "Tipo Simplificado",
+                           "Importe DRC", "Fecha de inicio del contrato",
+                           "Descripci\u00f3n del contrato"]
+                    _ca = ["C", "L", "C", "R", "C", "L"]
+                    _ct = [0, 35, 12, 0, 10, 65]
+
+                # ── Clase FPDF con encabezado y pie automáticos ─────────────
+                class _PDFLst(_FPDF_LT):
+                    def header(self):
+                        if self.page_no() == 1:
+                            # Encabezado completo en la primera página
+                            self.set_font("Helvetica", "B", 12)
+                            self.set_text_color(11, 84, 69)      # IMSS_VERDE
+                            self.cell(0, 7,
+                                _sl(f"Listado de Contratos -- {_lbl_lt[:75]}"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            self.set_font("Helvetica", "", 8.5)
+                            self.set_text_color(134, 134, 136)
+                            self.cell(0, 5,
+                                _sl(f"Año(s): {_yr_lt}   |   Institución: {_inst_lt}"
+                                    f"   |   Total contratos: {_total_mr:,}"
+                                    f"   |   Monto total: ${_monto_mr/1e6:,.1f} M MXN"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            self.ln(3)
+                        else:
+                            # Encabezado compacto en páginas siguientes
+                            self.set_font("Helvetica", "I", 7.5)
+                            self.set_text_color(134, 134, 136)
+                            self.cell(0, 4,
+                                _sl(f"Listado de Contratos -- {_lbl_lt[:70]}"
+                                    f"  (pág. {self.page_no()})"),
+                                new_x="LMARGIN", new_y="NEXT")
+                            self.ln(1)
+                        # Fila de encabezado de tabla (en todas las páginas)
+                        self.set_fill_color(11, 84, 69)
+                        self.set_text_color(255, 255, 255)
+                        self.set_font("Helvetica", "B", 7.5)
+                        for _h, _w in zip(_ch, _cw):
+                            self.cell(_w, 6.5, _sl(_h),
+                                      border=0, align="C", fill=True)
+                        self.ln()
+                        self.set_text_color(23, 27, 25)   # IMSS_NEGRO
+
+                    def footer(self):
+                        self.set_y(-12)
+                        self.set_font("Helvetica", "", 7)
+                        self.set_text_color(134, 134, 136)
+                        _fe = pd.Timestamp.today().strftime("%d/%m/%Y")
+                        self.cell(0, 5,
+                            _sl(f"Division de Monitoreo de la Integridad Institucional -- IMSS"
+                                f"  |  ComprasMX {_yr_lt}"
+                                f"  |  Elaborado: {_fe}"
+                                f"  |  Pagina {self.page_no()} de {{nb}}"),
+                            align="C")
+
+                # ── Inicializar PDF ─────────────────────────────────────────
+                _pdf_lt = _PDFLst(orientation="L", unit="mm", format="letter")
+                _pdf_lt.alias_nb_pages()
+                _pdf_lt.set_auto_page_break(auto=True, margin=15)
+                _pdf_lt.set_margins(12, 15, 12)
+                _pdf_lt.add_page()
+
+                # ── Filas de datos ──────────────────────────────────────────
+                _df_lst = _dff_sel.reset_index(drop=True)
+                for _li, _lr in _df_lst.iterrows():
+                    _fl = (_li % 2 == 1)
+                    if _fl:
+                        _pdf_lt.set_fill_color(236, 246, 241)   # verde muy claro
+                    else:
+                        _pdf_lt.set_fill_color(255, 255, 255)
+                    _pdf_lt.set_font("Helvetica", "", 7)
+                    _pdf_lt.set_text_color(23, 27, 25)
+
+                    for _src, _w, _aln, _trn in zip(_cs, _cw, _ca, _ct):
+                        if _src is None:
+                            _pdf_lt.cell(_w, 5, str(_li + 1),
+                                         align="C", fill=_fl)
+                        elif _src == "Importe DRC":
+                            _iv = pd.to_numeric(_lr.get(_src), errors="coerce")
+                            _pdf_lt.cell(_w, 5,
+                                _sl(f"${_iv:,.0f}" if pd.notna(_iv) else "--"),
+                                align="R", fill=_fl)
+                        else:
+                            _vt = str(_lr.get(_src, "") or "")
+                            if _trn and len(_vt) > _trn:
+                                _vt = _vt[:_trn - 1] + "."
+                            _pdf_lt.cell(_w, 5, _sl(_vt),
+                                         align=_aln, fill=_fl)
+                    _pdf_lt.ln()
+
+                # ── Guardar en memoria y exponer descarga ───────────────────
+                import io as _io_lt
+                _buf_lt = _io_lt.BytesIO()
+                _pdf_lt.output(_buf_lt)
+                st.session_state[_pdf_lst_state] = _buf_lt.getvalue()
+                st.session_state[_pdf_lst_flag]  = False
+                st.rerun()
+
+            except Exception as _e_lst:
+                st.error(f"Error al generar el PDF del listado: {_e_lst}")
+                st.session_state[_pdf_lst_flag] = False
 
 
 # ───────────────────────────────────────────────────────────────
