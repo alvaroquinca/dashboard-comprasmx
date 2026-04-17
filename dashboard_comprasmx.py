@@ -5953,13 +5953,19 @@ def pagina_mapa_riesgo():
                 import io as _io_mr
 
                 def _s(text):
-                    """Sanitize string for fpdf Helvetica (Windows-1252/cp1252 safe).
-                    Soporta guion largo (—, 0x97), viñeta (•, 0x95) y guion medio (–, 0x96)."""
+                    """Sanitize string para fpdf Helvetica (Latin-1 safe).
+                    Helvetica (core font FPDF2) NO soporta U+2022 (•), U+2014 (—) ni
+                    U+2013 (–): son posiciones 0x80-0x9F del rango WinAnsi, excluidas
+                    del PDF WinAnsiEncoding estándar.  Se usan sustitutos dentro del
+                    rango Latin-1 que sí tienen glifo en Helvetica."""
                     t = str(text)
-                    t = (t.replace('\u2026', '...')
+                    t = (t.replace('\u2022', '\u00bb')   # bullet  • → »
+                          .replace('\u2014', '--')         # em dash — → --
+                          .replace('\u2013', '-')          # en dash – → -
+                          .replace('\u2026', '...')
                           .replace('\u201c', '"').replace('\u201d', '"')
                           .replace('\u2018', "'").replace('\u2019', "'"))
-                    return t.encode('cp1252', errors='replace').decode('cp1252')
+                    return t.encode('latin-1', errors='replace').decode('latin-1')
 
                 # ── Carta vertical, márgenes 15 mm ──────────────────────
                 _pdf_obj = _FPDF_MR(orientation="P", unit="mm", format="letter")
