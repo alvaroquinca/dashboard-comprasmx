@@ -417,6 +417,9 @@ def cargar_sancionados():
         'Fecha de inicio de inhabilitación ':    'Inicio inhabilitación',
         'Periodo de inhabilitación (meses)':     'Meses',
     })
+    # La BD de la SABG usa '&' como sustituto de 'Ñ' (artefacto de sistemas legacy).
+    # Se normaliza aquí para que el nombre se muestre correctamente en toda la app.
+    df_s['Empresa'] = df_s['Empresa'].astype(str).str.replace('&', 'Ñ', regex=False).str.strip()
     return df_s[['Empresa', 'RFC', 'Inicio inhabilitación', 'Meses', 'Nivel de Riesgo']]
 
 @st.cache_data
