@@ -6122,20 +6122,39 @@ def pagina_mapa_riesgo():
                             _edad_min_p = (int(_dr_p[_edad_col_p].min())
                                            if _edad_col_p and not _dr_p[_edad_col_p].isna().all()
                                            else None)
+                            # Proveedores únicos
+                            _n_prov_rc = (_dr_p["Proveedor o contratista"].nunique()
+                                          if "Proveedor o contratista" in _dr_p.columns else None)
+                            # Principal empresa por monto total
+                            _top_rc_nom, _top_rc_monto = None, 0.0
+                            if "Proveedor o contratista" in _dr_p.columns:
+                                _imp_rc_s = pd.to_numeric(_dr_p["Importe DRC"], errors="coerce")
+                                _grp_rc   = _dr_p.assign(__imp=_imp_rc_s).groupby(
+                                    "Proveedor o contratista")["__imp"].sum()
+                                if not _grp_rc.empty:
+                                    _top_rc_nom   = _grp_rc.idxmax()
+                                    _top_rc_monto = float(_grp_rc.max())
                             _pdf_obj.cell(0, 5.5,
                                 _s(f"\u2022  Empresa de reciente creación \u2014 {_n_p} contrato(s), ${_m_p/1e6:,.1f} M MXN"),
                                 new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_font("Helvetica", "", 8)
                             _pdf_obj.set_left_margin(22)
                             _pdf_obj.set_x(22)
+                            _prov_rc_txt = (f"{_n_prov_rc} empresa(s)"
+                                            if _n_prov_rc is not None else "empresas")
                             _det_rc = (
-                                "Contratos adjudicados a empresas con menos de un año de constitución "
-                                "al inicio del contrato (umbral: 365 días). "
-                                "Pueden ser empresas creadas ad hoc para obtener contratos públicos "
-                                "sin trayectoria comprobable."
+                                f"Se identificaron {_prov_rc_txt} con menos de un año de "
+                                "constitución al inicio del contrato (umbral: 365 días). "
+                                "Pueden ser empresas creadas ad hoc para obtener contratos "
+                                "públicos sin trayectoria comprobable."
                             )
                             if _edad_min_p is not None:
-                                _det_rc += f" Empresa de menor antigüedad detectada: {_edad_min_p} día(s)."
+                                _det_rc += f" Menor antigüedad detectada: {_edad_min_p} día(s)."
+                            if _top_rc_nom is not None:
+                                _nom_rc = str(_top_rc_nom)
+                                _nom_rc = (_nom_rc[:55] + "...") if len(_nom_rc) > 56 else _nom_rc
+                                _det_rc += (f" Principal empresa contratada: {_nom_rc} "
+                                            f"(${_top_rc_monto/1e6:,.1f} M MXN).")
                             _pdf_obj.multi_cell(_epw - 7, 4, _s(_det_rc),
                                                 new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_left_margin(15)
