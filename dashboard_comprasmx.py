@@ -5772,12 +5772,17 @@ def pagina_mapa_riesgo():
                 ])
             ].copy()
 
-            if len(_hits_san) > 0:
-                _riesgos_activos.append(("san", _hits_san))
-            else:
-                _riesgos_limpios.append(
-                    "Inhabilitados SABG (fallos previos a la inhabilitaci\u00f3n \u2014 sin violaci\u00f3n activa)"
+            # Solo se activa el riesgo cuando hay inhabilitación vigente;
+            # historial de inhabilitación y suspensión judicial no se consideran riesgo.
+            _hits_san_vigente = _hits_san[
+                _hits_san["Nivel de Riesgo"] == (
+                    "\U0001f534 Riesgo cr\u00edtico \u2014 Inhabilitaci\u00f3n vigente"
                 )
+            ].copy()
+            if len(_hits_san_vigente) > 0:
+                _riesgos_activos.append(("san", _hits_san_vigente))
+            else:
+                _riesgos_limpios.append("Inhabilitados SABG")
         else:
             _riesgos_limpios.append("Inhabilitados SABG")
     except Exception:
