@@ -6197,17 +6197,8 @@ def pagina_mapa_riesgo():
                         elif _tr_p == "brecha_lp":
                             _pdf_obj.cell(0, 5.5,
                                 _s(f"\u2022  Baja proporción de Licitación Pública \u2014 "
-                                   f"{_dr_p:.1f}% del monto (meta mínima: 65 %)"),
+                                   f"{_dr_p:.1f}% del monto"),
                                 new_x="LMARGIN", new_y="NEXT")
-                            _pdf_obj.set_font("Helvetica", "", 8)
-                            _pdf_obj.set_left_margin(22)
-                            _pdf_obj.set_x(22)
-                            _pdf_obj.multi_cell(_epw - 7, 4,
-                                _s("El Decreto presidencial del 18 de noviembre de 2024 establece que "
-                                   "al menos el 65 % del monto de adquisiciones debe adjudicarse mediante "
-                                   "licitación pública. El nivel actual no alcanza este umbral."),
-                                new_x="LMARGIN", new_y="NEXT")
-                            _pdf_obj.set_left_margin(15)
 
                         elif _tr_p == "conc_ad":
                             _pct_cg, _ser_cg = _dr_p
@@ -6237,16 +6228,19 @@ def pagina_mapa_riesgo():
 
                         elif _tr_p == "exc_alto":
                             _pdf_obj.cell(0, 5.5,
-                                _s(f"\u2022  Excepción Art. 55/42 LAASSP \u2014 "
+                                _s(f"\u2022  Art. 55 LAASSP \u2014 "
                                    f"{_dr_p:.1f}% del monto por contratación de excepción (umbral: 30 %)"),
                                 new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_font("Helvetica", "", 8)
                             _pdf_obj.set_left_margin(22)
                             _pdf_obj.set_x(22)
                             _pdf_obj.multi_cell(_epw - 7, 4,
-                                _s("El monto contratado mediante procedimientos de excepción supera "
-                                   "el límite del 30 % establecido por la normativa. "
-                                   "Este indicador es evaluado trimestralmente por la DMII."),
+                                _s("El art. 55 de la LAASSP establece que la suma de operaciones "
+                                   "al amparo de dicho artículo no podrá exceder el 30 % del presupuesto "
+                                   "de adquisiciones de la dependencia. Asimismo, el art. 111 del "
+                                   "Reglamento de la LAASSP establece los criterios bajo los cuales un "
+                                   "alto uso de estos procesos de excepción pudiera considerarse "
+                                   "como fraccionamiento."),
                                 new_x="LMARGIN", new_y="NEXT")
                             _pdf_obj.set_left_margin(15)
 
