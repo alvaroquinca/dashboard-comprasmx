@@ -8527,7 +8527,8 @@ def pagina_expediente():
 # ───────────────────────────────────────────────────────────────
 # HELPER: GENERADOR DE PDF PARA FICHA DE EMPRESA
 # ───────────────────────────────────────────────────────────────
-def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
+def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label,
+                         df_cucop=None):
     """
     Genera un PDF con la ficha de la empresa:
     KPIs generales + tabla completa de contratos ordenada por monto.
@@ -8667,6 +8668,124 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
         pdf.cell(_cw_kpi, 8, _safe(str(_v)), align="C", **_STY)
     pdf.ln()
     pdf.ln(5)
+
+    # ── UNIDADES COMPRADORAS ──────────────────────────────────────────────────
+    # #(8) + UC(96) + Contratos(20) + Monto(34) + %(28) = 186 mm
+    _col_uc_e = "Nombre de la UC"
+    if _col_uc_e in df_contratos.columns:
+        _imp_uc = pd.to_numeric(df_contratos["Importe DRC"], errors="coerce")
+        _uc_grp = (
+            df_contratos.assign(_imp=_imp_uc)
+            .groupby(_col_uc_e, as_index=False)
+            .agg(Contratos=("_imp", "count"), Monto=("_imp", "sum"))
+            .sort_values("Monto", ascending=False)
+            .head(15)
+            .reset_index(drop=True)
+        )
+        _monto_tot_uc = _imp_uc.sum()
+        _n_uc_tot = df_contratos[_col_uc_e].nunique()
+
+        pdf.set_text_color(15, 38, 23)
+        pdf.set_font(_FN, "B", 10)
+        pdf.cell(186, 6,
+                 _safe(f"UNIDADES COMPRADORAS  "
+                       f"({_n_uc_tot:,} en total \u2014 Top {len(_uc_grp)} por monto)"),
+                 **_NL)
+        _y_uc = pdf.get_y()
+        pdf.set_draw_color(11, 84, 69)
+        pdf.line(12, _y_uc, 198, _y_uc)
+        pdf.ln(2)
+
+        _uc_hdrs = [("N\u00b0", 8, "C"), ("Unidad Compradora", 96, "L"),
+                    ("Contratos", 20, "C"), ("Monto", 34, "R"), ("% del total", 28, "R")]
+        pdf.set_fill_color(11, 84, 69)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font(_FN, "B", 7)
+        for _h, _w, _a in _uc_hdrs:
+            pdf.cell(_w, 5.5, _safe(_h), fill=True, align=_a, **_STY)
+        pdf.ln()
+
+        for _i, _row in _uc_grp.iterrows():
+            _bg = (245, 250, 248) if _i % 2 == 0 else (255, 255, 255)
+            pdf.set_fill_color(*_bg)
+            pdf.set_text_color(23, 27, 25)
+            pdf.set_font(_FN, "", 6.5)
+            _pct_uc = (_row["Monto"] / _monto_tot_uc * 100) if _monto_tot_uc > 0 else 0
+            _uc_nm  = _safe(str(_row[_col_uc_e])[:50])
+            _m_uc   = (f"${_row['Monto']/1e9:,.2f} mil M" if _row["Monto"] >= 1e9
+                       else f"${_row['Monto']/1e6:,.1f} M")
+            pdf.cell(8,  4.5, str(_i + 1),                   fill=True, align="C", **_STY)
+            pdf.cell(96, 4.5, _uc_nm,                         fill=True,             **_STY)
+            pdf.cell(20, 4.5, str(int(_row["Contratos"])),   fill=True, align="C", **_STY)
+            pdf.cell(34, 4.5, _m_uc,                          fill=True, align="R",  **_STY)
+            pdf.cell(28, 4.5, f"{_pct_uc:.1f}%",             fill=True, align="R",  **_NL)
+        pdf.ln(4)
+
+    # ── PARTIDAS PRESUPUESTARIAS ──────────────────────────────────────────────
+    # #(8) + Clave(20) + Descripción(90) + Contratos(20) + Monto(48) = 186 mm
+    _col_part_e = "Partida espec\u00edfica"
+    if _col_part_e in df_contratos.columns:
+        _df_pe = df_contratos.copy()
+        _df_pe["_clave"] = _df_pe[_col_part_e].astype(str).str.strip().str.zfill(5)
+        _df_pe["_imp"]   = pd.to_numeric(_df_pe["Importe DRC"], errors="coerce")
+        # Sólo partidas con código numérico de 5 dígitos (excluye años sin CUCoP)
+        _valid_p = _df_pe["_clave"].str.match(r'^\d{5}$', na=False)
+        _part_grp = (
+            _df_pe[_valid_p]
+            .groupby("_clave", as_index=False)
+            .agg(Contratos=("_clave", "count"), Monto=("_imp", "sum"))
+            .sort_values("Monto", ascending=False)
+            .head(15)
+            .reset_index(drop=True)
+        )
+
+        # Join con CUCoP para descripción
+        if df_cucop is not None and len(_part_grp) > 0:
+            _part_grp = _part_grp.merge(
+                df_cucop[["PARTIDA ESPEC\u00cdFICA", "DESC. PARTIDA ESPEC\u00cdFICA"]]
+                .drop_duplicates("PARTIDA ESPEC\u00cdFICA"),
+                left_on="_clave", right_on="PARTIDA ESPEC\u00cdFICA", how="left"
+            )
+        if "DESC. PARTIDA ESPEC\u00cdFICA" not in _part_grp.columns:
+            _part_grp["DESC. PARTIDA ESPEC\u00cdFICA"] = ""
+
+        if len(_part_grp) > 0:
+            _n_part_tot = _df_pe[_valid_p]["_clave"].nunique()
+            pdf.set_text_color(15, 38, 23)
+            pdf.set_font(_FN, "B", 10)
+            pdf.cell(186, 6,
+                     _safe(f"PARTIDAS PRESUPUESTARIAS  "
+                           f"({_n_part_tot:,} en total \u2014 Top {len(_part_grp)} por monto)"),
+                     **_NL)
+            _y_pt = pdf.get_y()
+            pdf.set_draw_color(11, 84, 69)
+            pdf.line(12, _y_pt, 198, _y_pt)
+            pdf.ln(2)
+
+            _pt_hdrs = [("N\u00b0", 8, "C"), ("Clave", 20, "C"),
+                        ("Descripci\u00f3n de la partida", 90, "L"),
+                        ("Contratos", 20, "C"), ("Monto", 48, "R")]
+            pdf.set_fill_color(11, 84, 69)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(_FN, "B", 7)
+            for _h, _w, _a in _pt_hdrs:
+                pdf.cell(_w, 5.5, _safe(_h), fill=True, align=_a, **_STY)
+            pdf.ln()
+
+            for _i, _row in _part_grp.iterrows():
+                _bg = (245, 250, 248) if _i % 2 == 0 else (255, 255, 255)
+                pdf.set_fill_color(*_bg)
+                pdf.set_text_color(23, 27, 25)
+                pdf.set_font(_FN, "", 6.5)
+                _desc_p = _safe(str(_row.get("DESC. PARTIDA ESPEC\u00cdFICA", "") or "")[:48])
+                _m_pt   = (f"${_row['Monto']/1e9:,.2f} mil M" if _row["Monto"] >= 1e9
+                           else f"${_row['Monto']/1e6:,.1f} M")
+                pdf.cell(8,  4.5, str(_i + 1),                 fill=True, align="C", **_STY)
+                pdf.cell(20, 4.5, _safe(_row["_clave"]),        fill=True, align="C", **_STY)
+                pdf.cell(90, 4.5, _desc_p,                      fill=True,             **_STY)
+                pdf.cell(20, 4.5, str(int(_row["Contratos"])), fill=True, align="C", **_STY)
+                pdf.cell(48, 4.5, _m_pt,                        fill=True, align="R",  **_NL)
+            pdf.ln(4)
 
     # ── TABLA DE CONTRATOS ────────────────────────────────────
     # A4 vertical, márgenes 12 mm → 186 mm útiles
@@ -8818,8 +8937,13 @@ def pagina_empresa():
         "n_inst":      f"{_ins_pdf:,}",
     }
     try:
+        try:
+            _df_cucop_emp = cargar_cucop()
+        except Exception:
+            _df_cucop_emp = None
         _pdf_bytes = _generar_pdf_empresa(
-            _nombre_emp, _rfc_emp, _kpis_pdf, df_emp, _anios_todos_label
+            _nombre_emp, _rfc_emp, _kpis_pdf, df_emp, _anios_todos_label,
+            df_cucop=_df_cucop_emp
         )
         st.download_button(
             label="⬇️ Descargar ficha PDF",
