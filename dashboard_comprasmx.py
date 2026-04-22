@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-17
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-20
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -8530,7 +8530,7 @@ def pagina_expediente():
 def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
     """
     Genera un PDF con la ficha de la empresa:
-    KPIs generales + tabla de contratos (top 50 por monto).
+    KPIs generales + tabla completa de contratos ordenada por monto.
     Devuelve bytes del PDF.
     """
     from fpdf import FPDF, XPos, YPos
@@ -8540,7 +8540,6 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
     # ── Selección de fuente con soporte Unicode ─────────────────
     # Orden de preferencia: macOS → Linux → Windows → fallback Latin-1
     _FONT_CANDIDATES = [
-        # (regular,                                                   bold,                                                     italic)
         ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
          "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
          "/System/Library/Fonts/Supplemental/Arial Italic.ttf"),
@@ -8562,23 +8561,23 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
     for _r, _b, _i in _FONT_CANDIDATES:
         if _os.path.isfile(_r):
             _font_r = _r
-            _font_b = _b if _os.path.isfile(_b) else _r   # bold fallback = regular
-            _font_i = _i if _os.path.isfile(_i) else _r   # italic fallback = regular
+            _font_b = _b if _os.path.isfile(_b) else _r
+            _font_i = _i if _os.path.isfile(_i) else _r
             break
 
     _use_unicode = _font_r is not None
 
     # ── Sanitizador de texto ─────────────────────────────────────
-    # Con fuente Unicode: pasa el texto tal cual.
+    # Con fuente Unicode (TTF): pasa el texto tal cual.
     # Sin fuente Unicode: reemplaza caracteres fuera de Latin-1.
     _SUBS = {
-        "\u2014": "-",   # em dash —
+        "\u2014": "--",  # em dash —
         "\u2013": "-",   # en dash –
-        "\u2019": "'",   "\u2018": "'",   # comillas simples curvas
-        "\u201c": '"',   "\u201d": '"',   # comillas dobles curvas
-        "\u2026": "...", "\u00a0": " ",   # elipsis, espacio no separable
-        "\u00ab": '"',   "\u00bb": '"',   # «»
-        "\u00b7": ".",   "\u2022": "*",   # punto medio, viñeta
+        "\u2019": "'",   "\u2018": "'",
+        "\u201c": '"',   "\u201d": '"',
+        "\u2026": "...", "\u00a0": " ",
+        "\u00ab": '"',   "\u00bb": '"',
+        "\u00b7": ".",   "\u2022": "*",
     }
 
     def _safe(text):
@@ -8589,15 +8588,26 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
             s = s.replace(orig, repl)
         return s.encode("latin-1", errors="replace").decode("latin-1")
 
-    # Alias de posicionamiento fpdf2
     _NL  = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
     _STY = {"new_x": XPos.RIGHT,   "new_y": YPos.TOP}
+    _FN  = "F" if _use_unicode else "Helvetica"
+    _fecha_elab = _dt.date.today().strftime("%d/%m/%Y")
 
-    # Nombre del font registrado en el PDF
-    _FN = "F" if _use_unicode else "Helvetica"
-
+    # ── Subclase FPDF: footer automático en todas las páginas ────
     class _FichaPDF(FPDF):
-        pass
+        def footer(self):
+            self.set_y(-13)
+            self.set_draw_color(11, 84, 69)
+            self.line(12, self.get_y(), 198, self.get_y())
+            self.ln(1)
+            self.set_font(_FN, "I", 7)
+            self.set_text_color(134, 134, 136)
+            self.cell(186, 4,
+                _safe(f"Divisi\u00f3n de Monitoreo de la Integridad Institucional"
+                      f" \u2014 IMSS  |  ComprasMX {anios_label}"
+                      f"  |  Elaborado: {_fecha_elab}"
+                      f"  |  P\u00e1gina {self.page_no()} de {{nb}}"),
+                align="C")
 
     pdf = _FichaPDF(orientation="P", unit="mm", format="A4")
     if _use_unicode:
@@ -8605,6 +8615,7 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
         pdf.add_font(_FN, style="B", fname=_font_b)
         pdf.add_font(_FN, style="I", fname=_font_i)
 
+    pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
     pdf.set_margins(12, 12, 12)
@@ -8615,7 +8626,7 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
     pdf.set_font(_FN, "B", 9)
     pdf.set_text_color(255, 255, 255)
     pdf.cell(186, 9,
-             _safe("  DIVISIÓN DE MONITOREO DE LA INTEGRIDAD INSTITUCIONAL — IMSS"),
+             _safe("  DIVISI\u00d3N DE MONITOREO DE LA INTEGRIDAD INSTITUCIONAL \u2014 IMSS"),
              fill=True, **_NL)
     pdf.ln(3)
 
@@ -8628,15 +8639,15 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
     pdf.set_font(_FN, "", 9)
     pdf.set_text_color(134, 134, 136)
     pdf.cell(186, 5,
-             _safe(f"RFC: {rfc_emp}   |   ComprasMX {anios_label}   |   "
-                   f"Generado: {_dt.date.today().strftime('%d/%m/%Y')}"),
+             _safe(f"RFC: {rfc_emp}   |   ComprasMX {anios_label}"
+                   f"   |   Elaborado: {_fecha_elab}"),
              align="C", **_NL)
     pdf.ln(5)
 
     # ── KPIs ──────────────────────────────────────────────────
     pdf.set_text_color(15, 38, 23)
     pdf.set_font(_FN, "B", 10)
-    pdf.cell(186, 6, _safe("ESTADÍSTICAS GENERALES"), **_NL)
+    pdf.cell(186, 6, _safe("ESTAD\u00cdSTICAS GENERALES"), **_NL)
     _y_sep = pdf.get_y()
     pdf.set_draw_color(11, 84, 69)
     pdf.line(12, _y_sep, 198, _y_sep)
@@ -8644,37 +8655,39 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
 
     _kpi_lbls = ["Contratos totales", "Monto total", "Adj. directas", "Instituciones"]
     _kpi_vals = [kpis["n_contratos"], kpis["monto_fmt"], kpis["pct_ad"], kpis["n_inst"]]
-    _cw = 46
+    _cw_kpi = 46
     for _k in _kpi_lbls:
         pdf.set_font(_FN, "", 7)
         pdf.set_text_color(134, 134, 136)
-        pdf.cell(_cw, 4, _safe(_k), align="C", **_STY)
+        pdf.cell(_cw_kpi, 4, _safe(_k), align="C", **_STY)
     pdf.ln()
     for _v in _kpi_vals:
         pdf.set_font(_FN, "B", 10)
         pdf.set_text_color(11, 84, 69)
-        pdf.cell(_cw, 8, _safe(str(_v)), align="C", **_STY)
+        pdf.cell(_cw_kpi, 8, _safe(str(_v)), align="C", **_STY)
     pdf.ln()
     pdf.ln(5)
 
     # ── TABLA DE CONTRATOS ────────────────────────────────────
+    # A4 vertical, márgenes 12 mm → 186 mm útiles
+    # #(8) + Año(13) + Tipo(27) + Importe(26) + UC(47) + Descripción(65) = 186
     pdf.set_text_color(15, 38, 23)
     pdf.set_font(_FN, "B", 10)
     _n_tot = len(df_contratos)
-    _nota = (f" (Top 50 por monto — total: {_n_tot:,})"
-             if _n_tot > 50 else f" ({_n_tot:,} contratos)")
-    pdf.cell(186, 6, _safe(f"CONTRATOS{_nota}"), **_NL)
+    pdf.cell(186, 6,
+             _safe(f"CONTRATOS  ({_n_tot:,} en total, ordenados por monto)"),
+             **_NL)
     _y_sep2 = pdf.get_y()
     pdf.line(12, _y_sep2, 198, _y_sep2)
     pdf.ln(2)
 
-    # Cabecera tabla
     _cols_h = [
-        ("N°",                9,  "C"),
-        ("Tipo",              30, "L"),
-        ("Importe",           28, "R"),
-        ("Unidad Compradora", 54, "L"),
-        ("Descripción",       65, "L"),
+        ("N\u00b0",              8,  "C"),
+        ("A\u00f1o",            13,  "C"),
+        ("Tipo",                27,  "L"),
+        ("Importe",             26,  "R"),
+        ("Unidad Compradora",   47,  "L"),
+        ("Descripci\u00f3n",    65,  "L"),
     ]
     pdf.set_fill_color(11, 84, 69)
     pdf.set_text_color(255, 255, 255)
@@ -8683,10 +8696,9 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
         pdf.cell(_hw, 5.5, _safe(_hdr), fill=True, align=_ha, **_STY)
     pdf.ln()
 
-    # Filas (top 50 por monto)
+    # Todas las filas, ordenadas por monto descendente
     _df_show = (
         df_contratos.sort_values("Importe DRC", ascending=False)
-        .head(50)
         .reset_index(drop=True)
     )
     for _i, _r in _df_show.iterrows():
@@ -8695,7 +8707,8 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
         pdf.set_text_color(23, 27, 25)
         pdf.set_font(_FN, "", 6.5)
 
-        _tipo = _safe(str(_r.get("Tipo Simplificado", ""))[:24])
+        _anio = _safe(str(_r.get("A\u00f1o", _r.get("Año", ""))))
+        _tipo = _safe(str(_r.get("Tipo Simplificado", ""))[:22])
         _imp_raw = _r.get("Importe DRC", 0)
         try:
             _imp_v = float(_imp_raw) if pd.notna(_imp_raw) else 0.0
@@ -8703,28 +8716,15 @@ def _generar_pdf_empresa(nombre_emp, rfc_emp, kpis, df_contratos, anios_label):
             _imp_v = 0.0
         _imp  = (f"${_imp_v/1e9:,.2f} mil M" if _imp_v >= 1e9
                  else f"${_imp_v/1e6:,.1f} M")
-        _uc   = _safe(str(_r.get("Nombre de la UC", ""))[:42])
-        _desc = _safe(str(_r.get("Descripción del contrato", ""))[:56])
+        _uc   = _safe(str(_r.get("Nombre de la UC", ""))[:36])
+        _desc = _safe(str(_r.get("Descripci\u00f3n del contrato", ""))[:55])
 
-        pdf.cell(9,  4.5, str(_i + 1), fill=True, align="C", **_STY)
-        pdf.cell(30, 4.5, _tipo,        fill=True,             **_STY)
-        pdf.cell(28, 4.5, _imp,         fill=True, align="R",  **_STY)
-        pdf.cell(54, 4.5, _uc,          fill=True,             **_STY)
+        pdf.cell(8,  4.5, str(_i + 1), fill=True, align="C", **_STY)
+        pdf.cell(13, 4.5, _anio,        fill=True, align="C", **_STY)
+        pdf.cell(27, 4.5, _tipo,        fill=True,             **_STY)
+        pdf.cell(26, 4.5, _imp,         fill=True, align="R",  **_STY)
+        pdf.cell(47, 4.5, _uc,          fill=True,             **_STY)
         pdf.cell(65, 4.5, _desc,        fill=True,             **_NL)
-
-    # ── FOOTER ─────────────────────────────────────────────────
-    if pdf.get_y() < 268:
-        pdf.set_y(268)
-    pdf.set_draw_color(11, 84, 69)
-    _y_ft = pdf.get_y()
-    pdf.line(12, _y_ft, 198, _y_ft)
-    pdf.ln(1)
-    pdf.set_font(_FN, "I", 7)
-    pdf.set_text_color(134, 134, 136)
-    pdf.cell(186, 5,
-             _safe(f"División de Monitoreo de la Integridad Institucional"
-                   f" — IMSS | ComprasMX {anios_label}"),
-             align="C")
 
     return bytes(pdf.output())
 
