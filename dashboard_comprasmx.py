@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-20
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-23
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -461,6 +461,71 @@ def cargar_umbrales_pef():
         return {}
     except Exception:
         return {}
+
+
+@st.cache_data
+def cargar_drc():
+    """Carga y limpia el catálogo DRC de partidas 2026 IMSS.
+    - Deduplica registros exactos
+    - Convierte columnas numéricas (precio_unitario, subtotal, iva, total_partida, etc.)
+    - Join con CUCoP: cve_cucop ↔ CLAVE CUCoP + (jerarquía completa)
+    Retorna DataFrame vacío si el archivo no existe."""
+    try:
+        df_drc = pd.read_csv(
+            "../drc_partidas_2026_IMSS.csv",
+            dtype=str,
+            low_memory=False,
+        )
+    except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+    df_drc.columns = df_drc.columns.str.strip()
+
+    # Deduplicar filas exactamente iguales (~19% duplicados en el scrape)
+    df_drc = df_drc.drop_duplicates()
+
+    # Convertir columnas numéricas
+    for _col in ["precio_unitario", "subtotal", "iva",
+                 "total_partida", "monto_minimo", "monto_maximo"]:
+        if _col in df_drc.columns:
+            df_drc[_col] = pd.to_numeric(df_drc[_col], errors="coerce")
+
+    # Normalizar textos clave
+    df_drc["cve_cucop"] = df_drc["cve_cucop"].astype(str).str.strip()
+    df_drc["uuid_procedimiento"] = df_drc["uuid_procedimiento"].astype(str).str.strip()
+    df_drc["descripcion"] = df_drc["descripcion"].astype(str).str.strip()
+    if "unidad_medida" in df_drc.columns:
+        df_drc["unidad_medida"] = (
+            df_drc["unidad_medida"].astype(str).str.strip().str.upper()
+        )
+
+    # Join con CUCoP para obtener jerarquía completa
+    try:
+        df_cu = cargar_cucop()
+        _cols_cu = [
+            "CLAVE CUCoP +",
+            "DESC. PARTIDA ESPECÍFICA",
+            "PARTIDA GENÉRICA",  "DESC. PARTIDA GENÉRICA",
+            "CONCEPTO",          "DESC. CONCEPTO",
+            "CAPÍTULO",          "DESC. CAPÍTULO",
+        ]
+        _cols_cu_ok = [c for c in _cols_cu if c in df_cu.columns]
+        _df_cu_sel = (
+            df_cu[_cols_cu_ok]
+            .drop_duplicates(subset=["CLAVE CUCoP +"])
+        )
+        df_drc = df_drc.merge(
+            _df_cu_sel,
+            left_on="cve_cucop",
+            right_on="CLAVE CUCoP +",
+            how="left",
+        )
+    except Exception:
+        pass
+
+    return df_drc
 
 
 def nivel_efos(sit):
@@ -11810,6 +11875,421 @@ OCDS registrado oficialmente para las UCs mexicanas.
     st.caption(f"División de Monitoreo de la Integridad Institucional – IMSS | ComprasMX {_anios_label}")
 
 
+# ═══════════════════════════════════════════════════════════════
+# COMPARADOR DE PRECIOS UNITARIOS — DRC
+# ═══════════════════════════════════════════════════════════════
+def pagina_comparador_drc():
+    st.header("💲 Comparador de Precios Unitarios — DRC")
+    st.caption(
+        "Analiza y compara precios unitarios de bienes y servicios contratados por el IMSS en 2026, "
+        "a partir de los Desgloses de Requisición de Contratos (DRC) publicados en ComprasMX. "
+        "Identifica variaciones de precio entre Unidades Compradoras para el mismo bien o servicio."
+    )
+
+    # ── Carga de datos ────────────────────────────────────────────────
+    df_drc_all = cargar_drc()
+    if df_drc_all.empty:
+        st.error(
+            "⚠️ No se encontró el archivo **drc_partidas_2026_IMSS.csv**. "
+            "Coloque el archivo en la carpeta raíz del proyecto (un nivel arriba de `datos_slim/`)."
+        )
+        return
+
+    # Join con contratos 2026 para obtener UC y proveedor por UUID
+    _url_col = "Dirección del anuncio"
+    _has_uc_col = False
+    try:
+        df_c26 = cargar_datos("contratos_comprasmx_2026.csv")
+        if _url_col in df_c26.columns:
+            _uuid_map = df_c26[[_url_col, "Nombre de la UC",
+                                 "Proveedor o contratista", "rfc"]].copy()
+            _uuid_map["_uuid"] = _uuid_map[_url_col].str.extract(
+                r"/detalle/([a-f0-9]{32})/procedimiento"
+            )
+            _uuid_map = (
+                _uuid_map.dropna(subset=["_uuid"])
+                .drop_duplicates(subset=["_uuid"])
+            )
+            df_drc_all = df_drc_all.merge(
+                _uuid_map[["_uuid", "Nombre de la UC",
+                            "Proveedor o contratista", "rfc", _url_col]],
+                left_on="uuid_procedimiento",
+                right_on="_uuid",
+                how="left",
+            )
+            _has_uc_col = "Nombre de la UC" in df_drc_all.columns
+    except Exception:
+        pass
+
+    # ── Filtros de búsqueda ───────────────────────────────────────────
+    st.subheader("🔍 Búsqueda")
+    _fc1, _fc2 = st.columns([3, 2])
+    _q = _fc1.text_input(
+        "Descripción del bien o servicio",
+        placeholder="Ej: guante, aguja desechable, servicio de limpieza…",
+        key="drc_q",
+    )
+
+    # Búsqueda preliminar para filtrar opciones de unidad de medida
+    _df_pre = df_drc_all.copy()
+    if _q.strip():
+        _df_pre = _df_pre[
+            _df_pre["descripcion"].str.upper().str.contains(
+                _q.strip().upper(), na=False
+            )
+        ]
+
+    _ums_opts = (
+        sorted(_df_pre["unidad_medida"].dropna().unique().tolist())
+        if "unidad_medida" in _df_pre.columns else []
+    )
+    _um_sel = _fc2.multiselect(
+        "Unidad de medida",
+        _ums_opts,
+        key="drc_um",
+        placeholder="Todas las unidades",
+    )
+
+    _fex1, _fex2, _fex3 = st.columns([2, 3, 3])
+    _excl_p0 = _fex1.checkbox(
+        "Excluir precio unitario = 0", value=True, key="drc_excl_cero"
+    )
+
+    # Filtro capítulo CUCoP
+    _cap_opts = []
+    if "DESC. CAPÍTULO" in _df_pre.columns:
+        _cap_opts = sorted(_df_pre["DESC. CAPÍTULO"].dropna().unique().tolist())
+    _cap_sel = _fex2.selectbox(
+        "Capítulo CUCoP", ["(Todos)"] + _cap_opts, key="drc_cap"
+    )
+
+    # Filtro UC
+    _uc_opts = []
+    if _has_uc_col:
+        _uc_opts = sorted(_df_pre["Nombre de la UC"].dropna().unique().tolist())
+    _uc_sel = _fex3.multiselect(
+        "Unidad Compradora",
+        _uc_opts,
+        key="drc_uc",
+        placeholder="Todas las UCs",
+    )
+
+    # ── Pantalla de inicio (sin búsqueda) ─────────────────────────────
+    if not _q.strip():
+        st.info(
+            "ℹ️ Ingresa un término de búsqueda para comenzar el análisis de precios. "
+            "Puedes buscar por nombre del bien (ej. *guante*), servicio (ej. *limpieza*) "
+            "o por número de CUCoP (ej. *22101*)."
+        )
+        _s1, _s2, _s3 = st.columns(3)
+        _s1.metric("Total partidas DRC", f"{len(df_drc_all):,}")
+        _s2.metric(
+            "Claves CUCoP únicas",
+            f"{df_drc_all['cve_cucop'].nunique():,}",
+        )
+        _s3.metric(
+            "Procedimientos únicos",
+            f"{df_drc_all['uuid_procedimiento'].nunique():,}",
+        )
+        st.divider()
+        st.caption(
+            f"División de Monitoreo de la Integridad Institucional – IMSS | "
+            f"ComprasMX {_anios_label}"
+        )
+        return
+
+    # ── Aplicar filtros ───────────────────────────────────────────────
+    df_f = _df_pre.copy()
+    if _um_sel:
+        df_f = df_f[df_f["unidad_medida"].isin(_um_sel)]
+    if _excl_p0 and "precio_unitario" in df_f.columns:
+        df_f = df_f[
+            df_f["precio_unitario"].notna() & (df_f["precio_unitario"] > 0)
+        ]
+    if _cap_sel != "(Todos)" and "DESC. CAPÍTULO" in df_f.columns:
+        df_f = df_f[df_f["DESC. CAPÍTULO"] == _cap_sel]
+    if _uc_sel and _has_uc_col:
+        df_f = df_f[df_f["Nombre de la UC"].isin(_uc_sel)]
+
+    if df_f.empty:
+        st.warning("⚠️ No se encontraron partidas con los filtros seleccionados.")
+        return
+
+    _n_procs  = df_f["uuid_procedimiento"].nunique()
+    _n_cucops = df_f["cve_cucop"].nunique()
+    st.caption(
+        f"**{len(df_f):,}** partidas · "
+        f"**{_n_procs:,}** procedimientos · "
+        f"**{_n_cucops:,}** claves CUCoP"
+    )
+    st.divider()
+
+    # ── KPIs ──────────────────────────────────────────────────────────
+    _precios = df_f["precio_unitario"].dropna() if "precio_unitario" in df_f.columns else pd.Series(dtype=float)
+    _n_uc   = df_f["Nombre de la UC"].nunique()          if _has_uc_col else 0
+    _n_prov = df_f["Proveedor o contratista"].nunique()  if "Proveedor o contratista" in df_f.columns else 0
+
+    _cv = (
+        _precios.std() / _precios.mean() * 100
+        if len(_precios) > 1 and _precios.mean() > 0
+        else None
+    )
+
+    _kp1, _kp2, _kp3, _kp4, _kp5 = st.columns(5)
+    _kp1.metric("📋 Partidas DRC",        f"{len(df_f):,}")
+    _kp2.metric("🏥 Unidades Compradoras", f"{_n_uc:,}")
+    _kp3.metric("🏭 Proveedores",          f"{_n_prov:,}")
+    _kp4.metric(
+        "📊 Precio mediano",
+        f"${_precios.median():,.2f}" if len(_precios) > 0 else "N/D",
+    )
+    _kp5.metric(
+        "📈 Coef. de variación",
+        f"{_cv:.0f}%" if _cv is not None else "N/D",
+        help="Desviación estándar / Media × 100. Un coeficiente alto indica dispersión elevada entre precios.",
+    )
+
+    st.divider()
+
+    # ── Estadísticas de distribución ──────────────────────────────────
+    st.subheader("📊 Distribución de Precios Unitarios")
+
+    if len(_precios) > 0:
+        _pctls = [0.0, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 1.0]
+        _lbls  = ["Mínimo", "P10", "P25", "Mediana", "P75", "P90", "P95", "Máximo"]
+        _vals  = [_precios.quantile(p) for p in _pctls]
+        _scols = st.columns(8)
+        for _si, (_lbl, _val) in enumerate(zip(_lbls, _vals)):
+            _scols[_si].metric(_lbl, f"${_val:,.2f}")
+
+    # ── Gráfica de distribución ───────────────────────────────────────
+    _n_uc_graf = _n_uc if _has_uc_col else 0
+
+    if _has_uc_col and 1 < _n_uc_graf <= 25:
+        # Box plot por UC — ordenado por mediana
+        _uc_med = (
+            df_f.groupby("Nombre de la UC")["precio_unitario"]
+            .median()
+            .sort_values(ascending=True)
+        )
+        _fig = go.Figure()
+        for _uc_n in _uc_med.index:
+            _px_uc = (
+                df_f[df_f["Nombre de la UC"] == _uc_n]["precio_unitario"].dropna()
+            )
+            _fig.add_trace(
+                go.Box(
+                    y=_px_uc,
+                    name=(_uc_n[:45] + "…") if len(str(_uc_n)) > 46 else str(_uc_n),
+                    boxpoints="outliers",
+                    marker=dict(color=IMSS_ROJO, size=4, opacity=0.6),
+                    line=dict(color=IMSS_VERDE_OSCURO, width=1.5),
+                    fillcolor="rgba(11,84,69,0.15)",
+                )
+            )
+        _fig.update_layout(
+            title="Precio unitario por Unidad Compradora (ordenado por mediana)",
+            yaxis_title="Precio unitario (MXN)",
+            height=max(420, 28 * _n_uc_graf),
+            font=plotly_font(),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            showlegend=False,
+            margin=dict(l=20, r=20, t=50, b=60),
+        )
+        _fig.update_yaxes(gridcolor="#eeeeee", tickformat="$,.0f")
+        _fig.update_xaxes(tickangle=-35)
+        st.plotly_chart(_fig, use_container_width=True)
+
+    elif _has_uc_col and _n_uc_graf > 25:
+        # Demasiadas UCs → histograma con líneas de referencia + tabla resumen
+        st.caption(
+            f"Hay {_n_uc_graf} UCs en la selección. Se muestra el histograma general. "
+            "Usa el filtro **Unidad Compradora** para comparar UCs específicas."
+        )
+        _fig = go.Figure()
+        _fig.add_trace(
+            go.Histogram(
+                x=_precios,
+                nbinsx=40,
+                marker_color=IMSS_VERDE,
+                opacity=0.75,
+                name="Partidas",
+            )
+        )
+        for _pct_v, _pct_lbl, _pct_col in [
+            (0.25, "P25", IMSS_ORO),
+            (0.50, "Mediana", IMSS_VERDE_OSCURO),
+            (0.75, "P75", IMSS_ORO),
+            (0.90, "P90", IMSS_ROJO),
+        ]:
+            _fig.add_vline(
+                x=_precios.quantile(_pct_v),
+                line_dash="dash",
+                line_color=_pct_col,
+                annotation_text=_pct_lbl,
+                annotation_position="top right",
+                annotation_font_size=11,
+            )
+        _fig.update_layout(
+            title="Distribución de precios unitarios",
+            xaxis_title="Precio unitario (MXN)",
+            yaxis_title="Número de partidas",
+            height=400,
+            font=plotly_font(),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=20, r=20, t=50, b=40),
+        )
+        _fig.update_xaxes(gridcolor="#eeeeee", tickformat="$,.0f")
+        _fig.update_yaxes(gridcolor="#eeeeee")
+        st.plotly_chart(_fig, use_container_width=True)
+
+        # Tabla resumen por UC
+        with st.expander("📋 Resumen por Unidad Compradora"):
+            _uc_resumen = (
+                df_f.groupby("Nombre de la UC")["precio_unitario"]
+                .agg(
+                    Partidas="count",
+                    Mínimo="min",
+                    P25=lambda x: x.quantile(0.25),
+                    Mediana="median",
+                    P75=lambda x: x.quantile(0.75),
+                    Máximo="max",
+                )
+                .reset_index()
+                .sort_values("Mediana", ascending=False)
+            )
+            for _mc in ["Mínimo", "P25", "Mediana", "P75", "Máximo"]:
+                _uc_resumen[_mc] = _uc_resumen[_mc].map("${:,.2f}".format)
+            st.dataframe(_uc_resumen, use_container_width=True, hide_index=True)
+
+    else:
+        # Solo una UC o sin info de UC → histograma
+        _fig = go.Figure()
+        _fig.add_trace(
+            go.Histogram(
+                x=_precios,
+                nbinsx=30,
+                marker_color=IMSS_VERDE,
+                opacity=0.78,
+                name="Partidas",
+            )
+        )
+        for _pct_v, _pct_lbl, _pct_col in [
+            (0.25, "P25", IMSS_ORO),
+            (0.50, "Mediana", IMSS_VERDE_OSCURO),
+            (0.75, "P75", IMSS_ORO),
+            (0.90, "P90", IMSS_ROJO),
+        ]:
+            if len(_precios) > 0:
+                _fig.add_vline(
+                    x=_precios.quantile(_pct_v),
+                    line_dash="dash",
+                    line_color=_pct_col,
+                    annotation_text=_pct_lbl,
+                    annotation_position="top right",
+                    annotation_font_size=11,
+                )
+        _fig.update_layout(
+            title="Distribución de precios unitarios",
+            xaxis_title="Precio unitario (MXN)",
+            yaxis_title="Número de partidas",
+            height=380,
+            font=plotly_font(),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=20, r=20, t=50, b=40),
+        )
+        _fig.update_xaxes(gridcolor="#eeeeee", tickformat="$,.0f")
+        _fig.update_yaxes(gridcolor="#eeeeee")
+        st.plotly_chart(_fig, use_container_width=True)
+
+    st.divider()
+
+    # ── Tabla detallada de partidas ───────────────────────────────────
+    st.subheader("📋 Detalle de Partidas")
+    st.caption(
+        "Ordenadas por precio unitario (mayor a menor). "
+        "El **percentil** indica qué tan alto es ese precio dentro del conjunto de búsqueda actual "
+        "(100 = precio más alto, 0 = precio más bajo)."
+    )
+
+    df_tabla = df_f.copy()
+    if "precio_unitario" in df_tabla.columns and len(df_tabla) > 0:
+        df_tabla["Percentil"] = (
+            df_tabla["precio_unitario"].rank(pct=True) * 100
+        ).round(0)
+
+    # Seleccionar y ordenar columnas para mostrar
+    _show_cols = []
+    for _c in [
+        "Nombre de la UC",
+        "Proveedor o contratista",
+        "descripcion",
+        "unidad_medida",
+        "precio_unitario",
+        "Percentil",
+        "cve_cucop",
+        "DESC. PARTIDA ESPECÍFICA",
+        _url_col,
+    ]:
+        if _c in df_tabla.columns:
+            _show_cols.append(_c)
+
+    df_show = (
+        df_tabla[_show_cols]
+        .sort_values("precio_unitario", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    _col_cfg = {
+        "descripcion":              st.column_config.TextColumn("Descripción DRC",     width="large"),
+        "unidad_medida":            st.column_config.TextColumn("Unidad",              width="small"),
+        "precio_unitario":          st.column_config.NumberColumn("Precio Unitario",   format="$%.4f", width="medium"),
+        "Percentil":                st.column_config.ProgressColumn(
+                                        "Percentil", min_value=0, max_value=100,
+                                        format="%.0f%%", width="small"),
+        "Nombre de la UC":          st.column_config.TextColumn("Unidad Compradora",   width="medium"),
+        "Proveedor o contratista":  st.column_config.TextColumn("Proveedor",           width="medium"),
+        "cve_cucop":                st.column_config.TextColumn("CUCoP",               width="small"),
+        "DESC. PARTIDA ESPECÍFICA": st.column_config.TextColumn("Descripción CUCoP",   width="medium"),
+        _url_col:                   st.column_config.LinkColumn(
+                                        "🔗 ComprasMX",
+                                        display_text="Ver contrato",
+                                        width="small"),
+    }
+
+    st.dataframe(
+        df_show,
+        use_container_width=True,
+        column_config={k: v for k, v in _col_cfg.items() if k in df_show.columns},
+        hide_index=True,
+    )
+
+    # Descarga CSV
+    _csv_bytes = (
+        df_show
+        .drop(columns=[_url_col] if _url_col in df_show.columns else [])
+        .to_csv(index=False)
+        .encode("utf-8")
+    )
+    _q_slug = _q.strip()[:30].replace(" ", "_")
+    st.download_button(
+        "📥 Descargar tabla CSV",
+        _csv_bytes,
+        f"comparador_drc_{_q_slug}.csv",
+        "text/csv",
+        key="drc_download",
+    )
+
+    st.divider()
+    st.caption(
+        f"División de Monitoreo de la Integridad Institucional – IMSS | "
+        f"ComprasMX {_anios_label}"
+    )
+
+
 # NAVEGACIÓN PRINCIPAL (st.navigation)
 # ═══════════════════════════════════════════════════════════════
 pg = st.navigation(
@@ -11828,10 +12308,11 @@ pg = st.navigation(
             st.Page(pagina_precios,        title="Analítica de Precios",     icon="💊"),
         ],
         "Herramientas": [
-            st.Page(pagina_expediente,  title="Expediente de Contrato", icon="🔎"),
-            st.Page(pagina_empresa,     title="Ficha de la Empresa",    icon="🏭"),
-            st.Page(pagina_mapa_riesgo, title="Perfil UC",              icon="🗺️"),
-            st.Page(pagina_ocds,        title="Exportar OCDS",          icon="📤"),
+            st.Page(pagina_expediente,      title="Expediente de Contrato",     icon="🔎"),
+            st.Page(pagina_empresa,         title="Ficha de la Empresa",        icon="🏭"),
+            st.Page(pagina_mapa_riesgo,     title="Perfil UC",                  icon="🗺️"),
+            st.Page(pagina_comparador_drc,  title="Comparador de Precios DRC",  icon="💲"),
+            st.Page(pagina_ocds,            title="Exportar OCDS",              icon="📤"),
         ],
     }
 )
