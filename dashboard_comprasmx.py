@@ -12083,7 +12083,7 @@ def pagina_comparador_drc():
                     name=(_uc_n[:45] + "…") if len(str(_uc_n)) > 46 else str(_uc_n),
                     boxpoints="outliers",
                     marker=dict(color=IMSS_ROJO, size=4, opacity=0.6),
-                    line=dict(color=IMSS_VERDE_OSCURO, width=1.5),
+                    line=dict(color=IMSS_VERDE_OSC, width=1.5),
                     fillcolor="rgba(11,84,69,0.15)",
                 )
             )
@@ -12119,7 +12119,7 @@ def pagina_comparador_drc():
         )
         for _pct_v, _pct_lbl, _pct_col in [
             (0.25, "P25", IMSS_ORO),
-            (0.50, "Mediana", IMSS_VERDE_OSCURO),
+            (0.50, "Mediana", IMSS_VERDE_OSC),
             (0.75, "P75", IMSS_ORO),
             (0.90, "P90", IMSS_ROJO),
         ]:
@@ -12178,7 +12178,7 @@ def pagina_comparador_drc():
         )
         for _pct_v, _pct_lbl, _pct_col in [
             (0.25, "P25", IMSS_ORO),
-            (0.50, "Mediana", IMSS_VERDE_OSCURO),
+            (0.50, "Mediana", IMSS_VERDE_OSC),
             (0.75, "P75", IMSS_ORO),
             (0.90, "P90", IMSS_ROJO),
         ]:
