@@ -472,7 +472,7 @@ def cargar_drc():
     Retorna DataFrame vacío si el archivo no existe."""
     try:
         df_drc = pd.read_csv(
-            "../drc_partidas_2026_IMSS.csv",
+            "drc_partidas_2026_IMSS.csv",
             dtype=str,
             low_memory=False,
         )
