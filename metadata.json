@@ -2,23 +2,26 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-04-28 09:01",
+    "actualizado": "2026-04-28 09:30",
     "filas": 5325,
-    "columnas": 21
+    "columnas": 21,
+    "bytes_fuente": 35836874
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-04-28 09:05",
+    "actualizado": "2026-04-28 09:34",
     "filas": 18728,
-    "columnas": 21
+    "columnas": 21,
+    "bytes_fuente": 154338854
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
     "actualizado": "2026-04-28 09:09",
     "filas": 43999,
-    "columnas": 21
+    "columnas": 21,
+    "bytes_fuente": 169110919
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
