@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-27
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-30
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -12308,11 +12308,10 @@ pg = st.navigation(
             st.Page(pagina_precios,        title="Analítica de Precios",     icon="💊"),
         ],
         "Herramientas": [
-            st.Page(pagina_expediente,      title="Expediente de Contrato",     icon="🔎"),
-            st.Page(pagina_empresa,         title="Ficha de la Empresa",        icon="🏭"),
-            st.Page(pagina_mapa_riesgo,     title="Perfil UC",                  icon="🗺️"),
-            st.Page(pagina_comparador_drc,  title="Comparador de Precios DRC",  icon="💲"),
-            st.Page(pagina_ocds,            title="Exportar OCDS",              icon="📤"),
+            st.Page(pagina_expediente,  title="Expediente de Contrato", icon="🔎"),
+            st.Page(pagina_empresa,     title="Ficha de la Empresa",    icon="🏭"),
+            st.Page(pagina_mapa_riesgo, title="Perfil UC",              icon="🗺️"),
+            st.Page(pagina_ocds,        title="Exportar OCDS",          icon="📤"),
         ],
     }
 )
