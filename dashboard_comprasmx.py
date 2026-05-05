@@ -289,21 +289,46 @@ df_dir_uc = cargar_directorio_uc()
 
 @st.cache_data
 def cargar_precios_unitarios():
-    """Carga la hoja 'Insumo principal' de AnaliticaPreciosUnitarios.xlsx."""
+    """Carga la hoja 'Analitico_PU' de AnaliticaPreciosUnitarios.xlsx.
+    Renombra columnas del formato snake_case (Analitico_PU_5_mayo) al
+    formato con espacios/acentos que usa el resto del dashboard."""
     df_pu = pd.read_excel(
         "AnaliticaPreciosUnitarios.xlsx",
-        sheet_name="Insumo principal",
+        sheet_name="Analitico_PU",
         dtype=str
     )
     df_pu.columns = df_pu.columns.str.strip()
+
+    # Mapa de renombrado: snake_case → nombres con espacios/acentos
+    _rename = {
+        "Precio_unitario":        "Precio unitario",
+        "Monto_partida":          "Monto partida",
+        "Mediana_P":              "Mediana (P)",
+        "Limite_inf_P":           "Límite inferior (P)",
+        "Limite_sup_P":           "Límite superior (P)",
+        "Precios_estandarizados": "Precio estandarizado",
+        "Precio_atipico":         "Precio atípico",
+        "Cantidad_atipica":       "Cantidad atípica",
+        "Cantidad_estandarizada": "Cantidad estandarizada",
+        "Indice_alto_riesgo":     "Índice de alto riesgo",
+        "Muestra_significativa":  "Muestra significativa",
+        "Reciente_creacion":      "Reciente creación",
+        "RFC_proveedor":          "RFC del proveedor adjudicado",
+        "Clave_UC":               "Clave UC",
+        "Tipo_proveedor":         "Tipo de proveedor por historial",
+        "Caso_atencion_critico":  "Caso de atención crítico",
+        "Fuente_Compras_MX":      "Fuente Compras MX",
+        "Vinculo":                "Vínculo",
+        "Descripcion":            "Descripción",
+    }
+    df_pu = df_pu.rename(columns=_rename)
 
     # Convertir columnas numéricas
     _num_cols = [
         "Precio unitario", "Monto partida", "Cantidad",
         "Mediana (P)", "Límite inferior (P)", "Límite superior (P)",
         "Precio estandarizado", "Cantidad estandarizada",
-        "Índice de alto riesgo", "Montos analizados",
-        "Muestra significativa", "Reciente creación",
+        "Índice de alto riesgo", "Muestra significativa", "Reciente creación",
     ]
     for _c in _num_cols:
         if _c in df_pu.columns:
@@ -313,8 +338,8 @@ def cargar_precios_unitarios():
     _str_cols = [
         "Precio atípico", "Cantidad atípica", "Consolidada",
         "Tipo de proveedor por historial", "Caso de atención crítico",
-        "Fuente Compras MX", "Dentro de la fecha de análisis",
-        "Clave UC", "RFC del proveedor adjudicado", "UC", "Proveedor",
+        "Fuente Compras MX", "Clave UC", "RFC del proveedor adjudicado",
+        "UC", "Proveedor",
     ]
     for _c in _str_cols:
         if _c in df_pu.columns:
