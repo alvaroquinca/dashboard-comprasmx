@@ -12311,7 +12311,6 @@ pg = st.navigation(
             st.Page(pagina_expediente,  title="Expediente de Contrato", icon="🔎"),
             st.Page(pagina_empresa,     title="Ficha de la Empresa",    icon="🏭"),
             st.Page(pagina_mapa_riesgo, title="Perfil UC",              icon="🗺️"),
-            st.Page(pagina_ocds,        title="Exportar OCDS",          icon="📤"),
         ],
     }
 )
