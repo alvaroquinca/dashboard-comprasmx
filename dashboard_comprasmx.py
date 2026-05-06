@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-04-30
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-05-06
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -758,28 +758,6 @@ def pagina_descripcion():
 
     # ── SECCIÓN 1: DISTRIBUCIÓN POR TIPO DE PROCEDIMIENTO ──
     st.subheader("1️⃣ Distribución por Tipo de Procedimiento")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            La **Ley de Adquisiciones, Arrendamientos y Servicios del Sector Público (LAASSP)**
-            establece tres modalidades de contratación:
-
-            - 🟢 **Licitación pública** — procedimiento abierto y competitivo; garantiza las mejores
-              condiciones para el Estado (Art. 26 Fr. I LAASSP).
-            - 🟡 **Invitación a cuando menos tres personas** — proceso restringido a un mínimo de tres
-              participantes; procede en supuestos específicos de menor cuantía.
-            - 🔴 **Adjudicación directa** — asignación sin concurso; permitida solo en los casos de
-              excepción del Art. 41 LAASSP (urgencia, exclusividad, etc.).
-            - 🔴 **Adjudicación directa — Fr. I** — casos estructurales de excepción por **patente,
-              licencia exclusiva o derechos de autor** (Art. 54 Fr. I LAASSP vigente o Art. 41 Fr. I
-              de la ley anterior). Se separan del resto de adjudicaciones directas porque su causa
-              jurídica no es discrecional sino vinculada al titular del derecho.
-
-            El **Decreto presidencial del 18 de noviembre de 2024** establece que al menos el **65 %**
-            del monto total de adquisiciones debe canalizarse por licitación pública. La DMII monitorea
-            trimestralmente el cumplimiento de esta meta.
-            """
-        )
 
     col_a, col_b = st.columns(2)
 
@@ -852,20 +830,6 @@ def pagina_descripcion():
 
     # ── SECCIÓN 2: CONCENTRACIÓN POR PROVEEDOR Y UC ──
     st.subheader("2️⃣ Concentración por Proveedor y Unidad Compradora")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Identifica **concentración de contratos** en un número reducido de proveedores o
-            Unidades Compradoras, lo que puede señalar dependencia excesiva, riesgos de corrupción
-            o captura del proceso de contratación.
-
-            - **TreeMap de proveedores** — los proveedores que concentran el mayor valor contratado.
-              El tamaño de cada celda es proporcional al monto. Una alta concentración puede indicar
-              falta de competencia real.
-            - **TreeMap de Unidades Compradoras** — las UCs con mayor monto contratado en el período.
-              Permite identificar qué dependencias ejercen el mayor presupuesto.
-            """
-        )
 
     col_c, col_d = st.columns(2)
 
@@ -935,13 +899,6 @@ def pagina_descripcion():
 
     # ── SECCIÓN 2b: DISTRIBUCIÓN POR TIPO DE UC ──
     st.subheader("🗺️  Distribución del Gasto por Tipo de UC")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown("""
-            Desglosa el gasto total por tipo de Unidad Compradora: **OOAD** (Delegaciones Regionales),
-            **UMAE** (Unidades de Alta Especialidad) y **Nivel Central**. Para el Nivel Central,
-            se distingue entre el gasto correspondiente a **compras consolidadas** (adquisiciones
-            coordinadas a nivel APF) y el gasto **no consolidado** de esa Unidad Compradora.
-        """)
     _tj_df = dff[["Clave de la UC", "Importe DRC", "Compra consolidada"]].merge(
         df_dir_uc[["Clave_UC", "Tipo UC"]],
         left_on="Clave de la UC", right_on="Clave_UC", how="left"
@@ -990,20 +947,6 @@ def pagina_descripcion():
 
     # ── SECCIÓN 3: ANÁLISIS POR PARTIDA PRESUPUESTARIA (CUCOP) ──
     st.subheader("3️⃣ Gasto por Partida Presupuestaria (CUCoP)")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Distribuye el gasto conforme al **Catálogo de Unidades de Compra y Objeto del Gasto (CUCoP)**,
-            que es la clasificación presupuestaria oficial para el gasto en adquisiciones de la APF.
-
-            - El catálogo tiene cuatro niveles de agregación: **Capítulo → Concepto → Partida genérica →
-              Partida específica**. Puedes cambiar el nivel de análisis con el selector inferior.
-            - Cuando un contrato tiene **múltiples partidas**, el monto se distribuye de forma proporcional
-              entre ellas para evitar doble conteo.
-            - El análisis permite identificar en qué bienes y servicios se concentra el gasto y detectar
-              posibles desvíos respecto a los objetivos institucionales.
-            """
-        )
 
     # Explotar contratos con múltiples partidas presupuestarias (ej: "15401, 27101, 27201, 27301")
     # El monto se divide en partes iguales entre todas las partidas del contrato
@@ -1127,23 +1070,6 @@ def pagina_descripcion():
 
     # ── SECCIÓN 4 (PARTE I): PATRONES DE CONTRATACIÓN ──
     st.subheader("4️⃣ Patrones de Contratación")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Analiza la **estructura del gasto** por tamaño de proveedor y detecta señales de alerta
-            en adjudicaciones de alto valor.
-
-            - **Estratificación por tamaño** — clasifica a los proveedores según el registro en el
-              sistema (micro, pequeña, mediana, grande empresa). Permite verificar si el gasto favorece
-              a sectores específicos o si hay concentración en grandes empresas a costa de las MIPYMES.
-            - **Distribución por monto** — complementa el conteo al mostrar el valor económico que
-              cada segmento representa, que puede diferir significativamente del número de contratos.
-            - **Cuotas Mipymes y cooperativas** — el nuevo Reglamento de la LAASSP establece cuotas
-              específicas para la contratación con micro, pequeñas y medianas empresas (Mipymes), así
-              como con sociedades cooperativas de producción. El análisis por estratificación permite
-              verificar el cumplimiento de estos porcentajes mínimos de gasto con dichos sectores.
-            """
-        )
 
     # Paleta consistente por nombre de categoría — misma estratificación = mismo color en ambas gráficas
     _estrat_palette = [IMSS_VERDE, IMSS_ORO, IMSS_ROJO,
@@ -1428,24 +1354,6 @@ def pagina_riesgo():
 
     # ── SECCIÓN 4 (PARTE II): PROVEEDORES SANCIONADOS ──
     st.subheader("4️⃣ Cruce con Proveedores Sancionados (SABG)")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Cruza los contratos con la **base de empresas inhabilitadas** publicada por la
-            Secretaría Anticorrupción y Buen Gobierno (SABG) en el Diario Oficial de la Federación.
-
-            **Criterio jurídico (Art. 46 LAASSP):** La fecha de referencia para determinar si una
-            contratación viola la ley es la **fecha de fallo**, no la firma del contrato. Con la
-            notificación del fallo las obligaciones son exigibles; si el fallo se emitió durante
-            un período de inhabilitación vigente, se configura la violación.
-
-            **Niveles de riesgo:**
-            - 🔴 **Riesgo crítico** — inhabilitación vigente sin suspensión judicial al momento del fallo.
-            - 🟠 **Riesgo alto** — inhabilitación suspendida judicialmente (controversia en curso).
-            - 🟡 **Riesgo medio** — inhabilitación ya concluida (historial de sanción).
-            - ⚫ **Fallo anterior** — el fallo fue previo al inicio de la inhabilitación; sin violación activa.
-            """
-        )
 
     try:
         df_san = cargar_sancionados()
@@ -1622,26 +1530,6 @@ def pagina_riesgo():
 
     # ── SECCIÓN 5: CRUCE CON EFOS (ART. 69-B CFF — SAT) ──
     st.subheader("5️⃣ Cruce con EFOS Art. 69-B CFF (SAT)")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Cruza los contratos con el **Listado de Empresas que Facturan Operaciones Simuladas
-            (EFOS)** publicado por el SAT conforme al **Art. 69-B del Código Fiscal de la
-            Federación (CFF)**.
-
-            Contratar con una EFOS puede implicar que los bienes o servicios pagados nunca se
-            entregaron, y que los comprobantes fiscales emitidos por esas empresas son inválidos
-            para efectos fiscales y de comprobación del gasto público.
-
-            **Clasificación de riesgo:**
-            - 🔴 **EFOS definitivo** — el SAT confirmó que la empresa facturó operaciones simuladas
-              (resolución definitiva publicada en el DOF). Riesgo máximo.
-            - 🟡 **EFOS presunto** — el SAT notificó presunción; la empresa está en proceso de
-              desvirtuar. Riesgo alto mientras no concluya el proceso.
-            - 🟢 **Desvirtuado / Sentencia favorable** — la empresa acreditó la materialidad de sus
-              operaciones o ganó un juicio; se incluye como referencia informativa sin alerta activa.
-            """
-        )
 
 
 
@@ -1750,25 +1638,6 @@ def pagina_riesgo():
 
     # ── SECCIÓN 6: EMPRESAS DE RECIENTE CREACIÓN ──
     st.subheader("6️⃣ Empresas de Reciente Creación")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Identifica contratos adjudicados a empresas con **menos de un año de constitución**
-            al inicio del contrato. Este patrón puede indicar empresas creadas *ad hoc* para
-            obtener contratos públicos sin trayectoria comprobable.
-
-            **Metodología:**
-            - La fecha de constitución se extrae directamente del **RFC de persona moral**
-              (12 caracteres: 3 letras + 6 dígitos de fecha YYMMDD + 3 alfanuméricos).
-            - Regla de siglo: `YY ≤ 30 → año 2000+YY`; `YY > 30 → año 1900+YY`.
-            - Solo aplica a personas morales; las personas físicas (RFC de 13 caracteres) se excluyen.
-            - La fecha de referencia es la **Fecha de inicio del contrato** (momento en que el
-              contrato entra en vigor). Umbral de alerta: antigüedad < 365 días.
-
-            Un proveedor de reciente creación que recibe contratos de alto valor sin antecedentes
-            puede ser señal de simulación o empresa fachada.
-            """
-        )
 
     def parse_fecha_rfc(rfc_str):
         """Extrae fecha de constitución de RFC de persona moral (LLL-YYMMDD-HHH, 12 chars)."""
@@ -1896,23 +1765,6 @@ def pagina_riesgo():
 
     # ── SECCIÓN 7: CONTRATOS POR PROCESOS DE EXCEPCIÓN ──
     st.subheader("7️⃣ Contratos por Procesos de Excepción")
-    with st.expander("ℹ️ Metodología y contexto", expanded=False):
-        st.markdown(
-            """
-            Identifica contratos adjudicados bajo las **figuras de excepción** a la licitación pública
-            y verifica si las Unidades Compradoras superan los **límites legales** establecidos:
-
-            - **Art. 55 / 42 LAASSP** — excepción a la licitación pública por adquisición de bienes o
-              servicios. Límite: el monto bajo excepción no debe rebasar el **30 %** del presupuesto
-              autorizado de adquisiciones de la dependencia.
-            - **Art. 43 LOPSRM** — excepción en obra pública y servicios relacionados. Límite: **20 %**
-              del presupuesto autorizado.
-
-            El análisis se realiza **por Unidad Compradora**, comparando el monto ejercido bajo excepción
-            respecto al total de cada UC. Superar el umbral es una señal de alerta que puede indicar
-            evasión sistemática del concurso público.
-            """
-        )
 
     # Filtros por artículo de excepción
     _mask_art55_s7  = _dff2["Artículo de excepción"].str.upper().str.startswith("ART. 55", na=False)
@@ -2901,25 +2753,6 @@ def pagina_dispersion():
     _MIN_CONT = 5   # mínimo de contratos
     _MIN_AÑOS = 2   # activo en al menos 2 años distintos
 
-    with st.expander("ℹ️ Metodología", expanded=False):
-        st.markdown(
-            f"""
-            Detecta proveedores que han recibido contratos en **rubros presupuestarios sin
-            relación entre sí**, lo que puede indicar empresas genéricas creadas para capturar
-            contratos en múltiples categorías o fenómenos de testa-ferros.
-
-            **Análisis multi-año (2023–2026).** Se agrupa por proveedor y unidad compradora;
-            se cuentan los **conceptos CUCoP** distintos (nivel intermedio entre Capítulo y
-            Partida Genérica — 39 categorías temáticas).
-
-            | Nivel | Criterio |
-            |---|---|
-            | 🔴 Riesgo alto  | ≥ {_NC_ALTO} conceptos distintos **y** ≥ {_MIN_AÑOS} años activos |
-            | 🟡 Riesgo medio | ≥ {_NC_MEDIO} conceptos distintos **y** ≥ {_MIN_AÑOS} años activos |
-
-            Mínimo {_MIN_CONT} contratos.
-            """
-        )
 
     # Filtro de UC
     _ucs_disp = ["Todas"] + sorted(dff_todos["Nombre de la UC"].dropna().unique().tolist())
@@ -9291,25 +9124,6 @@ def pagina_colusion():
 
     st.header("🕸️ Simulación de Competencia — Riesgo de Colusión")
 
-    with st.expander("ℹ️ Metodología y fundamento legal", expanded=False):
-        st.markdown(
-            """
-            **Fundamento legal — Art. 71 Fracción VII LAASSP:** Es causa de impedimento para
-            participar en una licitación estar vinculado o pertenecer al mismo grupo empresarial
-            que otro licitante del mismo proceso de contratación.
-
-            Se construye un **grafo de co-aparición** donde los nodos son proveedores y las
-            aristas representan procedimientos compartidos (peso = número de procedimientos
-            en común). Sobre este grafo se calculan cuatro indicadores:
-
-            | Indicador | Descripción | Umbral de alerta |
-            |---|---|---|
-            | **Pares de co-aparición** | Pares que comparten más procedimientos | Configurable |
-            | **Colusión (Louvain)** | Comunidades por algoritmo Louvain | Densidad > 0.6, 3+ miembros |
-            | **Concentración en red** | Proveedores con alta centralidad de grado | Degree centrality > 0.20 |
-            | **Comunidades inusuales** | Subcomunidades densas y cerradas | Densidad > 0.6, 5+ contratos |
-            """
-        )
 
     col_proc = "Número de procedimiento"
     if col_proc not in dff.columns:
@@ -10017,35 +9831,6 @@ def pagina_ranking_riesgo():
         st.info("ℹ️ Sin contratos para la selección actual.")
         return
 
-    with st.expander("ℹ️ Metodología — Score de riesgo compuesto", expanded=False):
-        st.markdown(
-            """
-            Cada contrato recibe un **score de riesgo base** calculado como la suma de los
-            indicadores de alerta que activan, y luego se **pondera por el monto** del contrato
-            (contratos de mayor valor amplifican el riesgo):
-
-            | Indicador | Puntos | Fundamento |
-            |---|---|---|
-            | 🔴 SABG — Inhabilitación vigente | 100 | Contratación legalmente prohibida. Fecha de fallo (o firma en AD) ≥ inicio inhabilitación (Art. 46 LAASSP) |
-            | 🟠 SABG — Inhabilitación suspendida | 60 | Resolución judicial pendiente |
-            | 🟡 SABG — Historial de inhabilitación | 30 | Antecedente de sanción |
-            | 🔴 EFOS definitivo (Art. 69-B CFF) | 80 | Operaciones simuladas confirmadas por el SAT |
-            | 🟡 EFOS presunto | 40 | Investigación SAT en curso |
-            | 🚦 Zona umbral legal (90–100 % del tope) | 45 | Monto justo por debajo del límite que exigiría licitación |
-            | 🟡 Empresa < 1 año de constitución | 30 | Posible empresa creada *ad hoc* |
-            | 🔴 Adjudicación directa (sin concurso) | 20 | Proceso sin competencia abierta |
-            | 🟡 Invitación a 3 personas | 5 | Competencia restringida |
-
-            > **SABG — fecha de referencia:** Para licitaciones e invitaciones a tres personas se usa
-            la *fecha de fallo*; para adjudicaciones directas (que no generan fallo formal) se usa la
-            *fecha de firma del contrato*. Fundamento: Art. 46 LAASSP.
-
-            **Ponderación por monto:**
-            `Score_final = Score_base × (1 + 0.5 × percentil_monto)` — contratos en el percentil 99
-            de monto reciben hasta un 50 % más de peso.
-            El score se normaliza a **0–100**. Un contrato puede acumular alertas de múltiples indicadores.
-            """
-        )
 
     # ════════════════════════════════════════════════════════════
     # CÁLCULO DE SCORES
@@ -10381,33 +10166,6 @@ def pagina_ranking_riesgo():
         "Los filtros de esta sección son independientes del selector de UC del ranking de contratos."
     )
 
-    with st.expander("ℹ️ Metodología — Score compuesto UC", expanded=False):
-        st.markdown(
-            """
-            El score final de cada UC es la suma ponderada de cuatro dimensiones (escala 0–100):
-
-            | Dimensión | Peso | Qué mide |
-            |---|---|---|
-            | **D1 — Integridad del proveedor** | 30 % | Contratos con inhabilitados SABG o EFOS |
-            | **D2 — Amplitud del riesgo** | 25 % | % de contratos con algún indicador de alerta |
-            | **D3 — Exposición económica** | 25 % | % del monto de la UC en contratos con riesgo |
-            | **D4 — Prácticas anticompetitivas** | 20 % | Caso fortuito · HHI · Reciente creación · Zona umbral · Fraccionamiento |
-
-            **D1 — regla de disparo inmediato:** cualquier contrato con SABG inhabilitación vigente o EFOS
-            definitivo eleva D1 = 100 de forma automática (incumplimiento normativo). Para SABG
-            suspendido/historial y EFOS presunto, D1 es proporcional al volumen de contratos afectados
-            (máximo alcanzable sin violación confirmada: 60).
-
-            **D4** combina cinco sub-indicadores en partes iguales:
-            - **Caso fortuito**: % del monto adjudicado bajo esta excepción
-            - **HHI**: concentración de proveedores (Herfindahl-Hirschman normalizado)
-            - **Reciente creación**: % del monto a empresas < 1 año de constitución
-            - **Zona umbral**: % de contratos en 90–100 % del tope legal PEF
-            - **Fraccionamiento**: % de proveedores con ≥ 3 AD a la misma UC
-
-            `Score_UC = 0.30·D1 + 0.25·D2 + 0.25·D3 + 0.20·D4`
-            """
-        )
 
     # ── Filtros locales (independientes del ranking de contratos) ──
     _uc_rk2_c1, _uc_rk2_c2, _uc_rk2_c3 = st.columns([2, 1, 1])
