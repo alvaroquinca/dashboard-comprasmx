@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-05-06
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-05-15
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
@@ -31,6 +31,15 @@ IMSS_NEGRO       = "#171B19"   # PANTONE Neutral Black C
 IMSS_GRIS        = "#868688"   # PANTONE Cool Gray C
 IMSS_ORO_CLARO   = "#E8D188"   # PANTONE 7402 C
 IMSS_ORO         = "#9D7119"   # PANTONE 1255 C
+
+# Topes de ingresos anuales para Sociedades por Acciones Simplificadas (Art. 260 LGSM)
+# Actualizados cada año por la Secretaría de Economía en el DOF (factor INPC Art. 17-A CFF)
+TOPES_SAS_LGSM = {
+    "2023": 6_783_425.40,
+    "2024": 7_076_469.38,
+    "2025": 7_398_448.74,
+    "2026": 7_678_849.94,
+}
 
 COLORES_TIPO = {
     "Licitación Pública":              IMSS_VERDE,
@@ -1974,6 +1983,105 @@ def pagina_riesgo():
             },
             use_container_width=True
         )
+
+    st.divider()
+
+    # ── SECCIÓN: SAS DE CV — LÍMITE DE INGRESOS (Art. 260 LGSM) ──────────────
+    st.subheader("⚖️ Sociedades por Acciones Simplificadas — Límite de Ingresos (Art. 260 LGSM)")
+    st.caption(
+        "Identifica empresas con denominación **SAS de CV** cuyos ingresos acumulados por contratos "
+        "con el gobierno superan el límite legal anual. Una SAS de CV que rebasa dicho tope debió "
+        "transformarse a otro régimen societario (Art. 260 LGSM); de no haberlo hecho, sus accionistas "
+        "responden de forma **subsidiaria, solidaria e ilimitada** frente a terceros."
+    )
+
+    _sas_topes_anio = {a: TOPES_SAS_LGSM[a] for a in anios_sel if a in TOPES_SAS_LGSM}
+    if not _sas_topes_anio:
+        st.info("ℹ️ No hay topes SAS configurados para el/los años seleccionados.")
+    else:
+        _topes_txt = "  |  ".join(
+            f"**{a}:** ${t:,.2f}" for a, t in sorted(_sas_topes_anio.items())
+        )
+        st.caption(f"🔖 Tope legal aplicable: {_topes_txt}")
+
+        _mask_sas_r = _dff2["Proveedor o contratista"].str.strip().str.upper().str.endswith(
+            "SAS DE CV", na=False
+        )
+        _df_sas_r = _dff2[_mask_sas_r].copy()
+
+        if _df_sas_r.empty:
+            st.success("✅ No hay contratos con empresas SAS de CV en los datos filtrados.")
+        else:
+            # Agrupar por empresa + año y comparar contra el tope del año
+            _sas_grp = (
+                _df_sas_r.groupby(["Proveedor o contratista", "rfc", "Año"])
+                .agg(Contratos=("Importe DRC", "count"), Monto=("Importe DRC", "sum"))
+                .reset_index()
+            )
+            _sas_grp["Tope"] = _sas_grp["Año"].map(_sas_topes_anio)
+            _sas_grp = _sas_grp.dropna(subset=["Tope"])
+            _sas_grp["Excede"] = _sas_grp["Monto"] > _sas_grp["Tope"]
+            _sas_grp["Exceso"] = (_sas_grp["Monto"] - _sas_grp["Tope"]).clip(lower=0)
+            _sas_grp["% tope"] = (_sas_grp["Monto"] / _sas_grp["Tope"] * 100).round(1)
+            _sas_sobre = _sas_grp[_sas_grp["Excede"]].sort_values("Monto", ascending=False)
+
+            # KPIs
+            _ks1, _ks2, _ks3, _ks4 = st.columns(4)
+            _ks1.metric("🏢 Empresas SAS con contratos",  f"{_sas_grp['Proveedor o contratista'].nunique():,}")
+            _ks2.metric("🚨 SAS que superan el tope",     f"{_sas_sobre['Proveedor o contratista'].nunique():,}")
+            _ks3.metric("📦 Contratos en alerta",         f"{int(_sas_sobre['Contratos'].sum()):,}")
+            _ks4.metric("💰 Monto en alerta",             f"${_sas_sobre['Monto'].sum()/1e6:,.1f} M MXN")
+
+            if _sas_sobre.empty:
+                st.success("✅ Ninguna SAS de CV supera el tope legal en los datos filtrados.")
+            else:
+                st.error(
+                    f"🚨 **{_sas_sobre['Proveedor o contratista'].nunique()} empresa(s) SAS de CV** "
+                    f"superan el límite anual de ingresos del Art. 260 LGSM."
+                )
+                # Tabla resumen
+                _tbl_sas_r = _sas_sobre.copy().reset_index(drop=True)
+                _tbl_sas_r.index += 1
+                _tbl_sas_r = _tbl_sas_r.rename(columns={
+                    "Proveedor o contratista": "Empresa",
+                    "rfc": "RFC",
+                    "Año": "Año",
+                    "Contratos": "Contratos",
+                    "Monto": "Monto contratado",
+                    "Tope": "Tope Art. 260",
+                    "Exceso": "Exceso",
+                    "% tope": "% del tope",
+                })
+                for _col_fmt in ["Monto contratado", "Tope Art. 260", "Exceso"]:
+                    _tbl_sas_r[_col_fmt] = _tbl_sas_r[_col_fmt].apply(lambda x: f"${x:,.2f}")
+                _tbl_sas_r["% del tope"] = _tbl_sas_r["% del tope"].apply(lambda x: f"{x:.1f}%")
+                st.dataframe(_tbl_sas_r, use_container_width=True)
+
+                # Detalle de contratos
+                with st.expander("📋 Ver contratos individuales de empresas SAS en alerta"):
+                    _emp_alerta_sas = _sas_sobre["Proveedor o contratista"].tolist()
+                    _df_sas_det = _dff2[
+                        _dff2["Proveedor o contratista"].isin(_emp_alerta_sas)
+                    ].copy()
+                    _cols_sas_det = [c for c in [
+                        "Año", "Proveedor o contratista", "rfc", "Nombre de la UC",
+                        "Tipo Simplificado", "Importe DRC",
+                        "Fecha de inicio del contrato", "Dirección del anuncio"
+                    ] if c in _df_sas_det.columns]
+                    st.dataframe(
+                        _df_sas_det[_cols_sas_det]
+                        .sort_values("Importe DRC", ascending=False)
+                        .reset_index(drop=True),
+                        use_container_width=True, height=400,
+                        column_config={"Dirección del anuncio": st.column_config.LinkColumn(
+                            "🔗 ComprasMX", display_text="Ver contrato"
+                        )}
+                    )
+                    st.download_button(
+                        "📥 Descargar CSV",
+                        _df_sas_det[_cols_sas_det].to_csv(index=False).encode("utf-8-sig"),
+                        "sas_limite_lgsm.csv", "text/csv", key="dl_sas_limite"
+                    )
 
     st.divider()
 
@@ -8517,6 +8625,38 @@ def pagina_empresa():
             st.info("ℹ️ **Reciente creación:** Fecha de inicio del contrato no disponible")
     else:
         st.info("ℹ️ **Reciente creación:** RFC de persona física o formato no analizable (aplica solo a personas morales)")
+
+    # ── SAS de CV — Límite de ingresos (Art. 260 LGSM) ───────────────────────
+    if str(_nombre_emp).strip().upper().endswith("SAS DE CV"):
+        st.markdown("**⚖️ SAS de CV — Límite de ingresos (Art. 260 LGSM)**")
+        _sas_por_anio = (
+            df_emp.groupby("Año")["Importe DRC"]
+            .sum().reset_index().rename(columns={"Importe DRC": "Monto"})
+        )
+        _sas_por_anio["Tope"] = _sas_por_anio["Año"].map(TOPES_SAS_LGSM)
+        _sas_por_anio = _sas_por_anio.dropna(subset=["Tope"])
+        if _sas_por_anio.empty:
+            st.info("ℹ️ **SAS de CV:** No hay topes configurados para los años disponibles.")
+        else:
+            _sas_excedidos = _sas_por_anio[_sas_por_anio["Monto"] > _sas_por_anio["Tope"]]
+            _sas_ok        = _sas_por_anio[_sas_por_anio["Monto"] <= _sas_por_anio["Tope"]]
+            for _, _r in _sas_excedidos.iterrows():
+                _exc = _r["Monto"] - _r["Tope"]
+                st.error(
+                    f"🔴 **{_r['Año']}:** Ingresos contratados ${_r['Monto']:,.2f} MXN — "
+                    f"supera el tope legal de ${_r['Tope']:,.2f} MXN "
+                    f"(exceso: **${_exc:,.2f}** · {_exc/_r['Tope']*100:.1f}% sobre el límite)"
+                )
+            for _, _r in _sas_ok.iterrows():
+                st.success(
+                    f"✅ **{_r['Año']}:** ${_r['Monto']:,.2f} MXN — dentro del tope de ${_r['Tope']:,.2f} MXN"
+                )
+            if not _sas_excedidos.empty:
+                st.caption(
+                    "Art. 260 LGSM: al rebasar el límite de ingresos anuales, la SAS de CV debió transformarse "
+                    "a otro régimen societario. Sus accionistas responden subsidiaria, solidaria e "
+                    "ilimitadamente frente a terceros (incluida la institución contratante)."
+                )
 
     # ════════════════════════════════════════════════════════════
     # BLOQUE 2 — ESTADÍSTICAS GENERALES (TODAS LAS INSTITUCIONES)
