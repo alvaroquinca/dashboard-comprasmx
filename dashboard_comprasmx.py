@@ -8656,13 +8656,16 @@ def pagina_empresa():
             for _, _r in _sas_excedidos.iterrows():
                 _exc = _r["Monto"] - _r["Tope"]
                 st.error(
-                    f"🔴 **{_r['Año']}:** Ingresos contratados ${_r['Monto']:,.2f} MXN — "
-                    f"supera el tope legal de ${_r['Tope']:,.2f} MXN "
-                    f"(exceso: **${_exc:,.2f}** · {_exc/_r['Tope']*100:.1f}% sobre el límite)"
+                    f"🔴 **{_r['Año']}:** Ingresos contratados "
+                    f"**\\${_r['Monto']:,.2f} MXN** — "
+                    f"supera el tope legal de \\${_r['Tope']:,.2f} MXN. "
+                    f"Exceso: **\\${_exc:,.2f} MXN** "
+                    f"({_exc / _r['Tope'] * 100:.1f}% sobre el límite)"
                 )
             for _, _r in _sas_ok.iterrows():
                 st.success(
-                    f"✅ **{_r['Año']}:** ${_r['Monto']:,.2f} MXN — dentro del tope de ${_r['Tope']:,.2f} MXN"
+                    f"✅ **{_r['Año']}:** \\${_r['Monto']:,.2f} MXN — "
+                    f"dentro del tope de \\${_r['Tope']:,.2f} MXN"
                 )
             if not _sas_excedidos.empty:
                 st.caption(
