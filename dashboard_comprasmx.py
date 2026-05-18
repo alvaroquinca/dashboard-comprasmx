@@ -32,14 +32,27 @@ IMSS_GRIS        = "#868688"   # PANTONE Cool Gray C
 IMSS_ORO_CLARO   = "#E8D188"   # PANTONE 7402 C
 IMSS_ORO         = "#9D7119"   # PANTONE 1255 C
 
-# Topes de ingresos anuales para Sociedades por Acciones Simplificadas (Art. 260 LGSM)
-# Actualizados cada año por la Secretaría de Economía en el DOF (factor INPC Art. 17-A CFF)
-TOPES_SAS_LGSM = {
-    "2023": 6_783_425.40,
-    "2024": 7_076_469.38,
-    "2025": 7_398_448.74,
-    "2026": 7_678_849.94,
-}
+# Topes de ingresos anuales para SAS de CV (Art. 260 LGSM).
+# Se cargan desde topes_sas_lgsm.csv — agrega una fila nueva cada enero con el
+# factor publicado por la Secretaría de Economía en el DOF (Art. 17-A CFF).
+@st.cache_data
+def _cargar_topes_sas() -> dict:
+    """Devuelve {str(año): float(tope)} leído desde topes_sas_lgsm.csv."""
+    try:
+        _df_t = pd.read_csv("topes_sas_lgsm.csv", dtype=str)
+        _df_t.columns = _df_t.columns.str.strip()
+        return {
+            str(row["Año"]).strip(): float(str(row["Tope"]).replace(",", "").strip())
+            for _, row in _df_t.iterrows()
+            if pd.notna(row.get("Año")) and pd.notna(row.get("Tope"))
+        }
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo leer topes_sas_lgsm.csv: {e}")
+        return {}
+
+TOPES_SAS_LGSM: dict = _cargar_topes_sas()
 
 COLORES_TIPO = {
     "Licitación Pública":              IMSS_VERDE,
