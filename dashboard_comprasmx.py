@@ -8669,9 +8669,9 @@ def pagina_empresa():
                 )
             if not _sas_excedidos.empty:
                 st.caption(
-                    "Art. 260 LGSM: al rebasar el límite de ingresos anuales, la SAS de CV debió transformarse "
-                    "a otro régimen societario. Sus accionistas responden subsidiaria, solidaria e "
-                    "ilimitadamente frente a terceros (incluida la institución contratante)."
+                    "⚖️ El Art. 260 LGSM establece un tope de ingresos anuales para las Sociedades por Acciones "
+                    "Simplificadas (SAS de CV). Las empresas que superen dicho límite deben transformarse a otro "
+                    "régimen societario."
                 )
 
     # ════════════════════════════════════════════════════════════
