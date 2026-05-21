@@ -2,40 +2,38 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-05-19 09:42",
-    "filas": 5921,
+    "actualizado": "2026-05-21 09:06",
+    "filas": 5991,
     "columnas": 21,
-    "bytes_fuente": 43515763,
-    "verificado": "2026-05-19 09:44"
+    "bytes_fuente": 44749468
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-05-19 09:43",
-    "filas": 18756,
+    "actualizado": "2026-05-21 09:06",
+    "filas": 18758,
     "columnas": 21,
-    "bytes_fuente": 154670547,
-    "verificado": "2026-05-19 09:44"
+    "bytes_fuente": 154700111
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-05-19 09:46",
-    "filas": 44020,
+    "actualizado": "2026-05-21 09:07",
+    "filas": 44021,
     "columnas": 21,
-    "bytes_fuente": 169248570
+    "bytes_fuente": 169253978
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-05-19 09:47",
+    "actualizado": "2026-05-21 09:07",
     "filas": 14360,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-05-19 09:48",
+    "actualizado": "2026-05-21 09:07",
     "filas": 27200,
     "columnas": 28
   },
