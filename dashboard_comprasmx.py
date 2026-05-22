@@ -6215,7 +6215,7 @@ def pagina_mapa_riesgo():
                 def _render_section_tag(_p, num, title):
                     _p.set_font("Helvetica", "B", 7.5)
                     _p.set_text_color(*_C["verde_primario"])
-                    _p.cell(14, 5, _s(f"§ {num}"), new_x="RIGHT", new_y="TOP")
+                    _p.cell(14, 5, _s(f"{num}."), new_x="RIGHT", new_y="TOP")
                     _p.set_font("Helvetica", "B", 9.5)
                     _p.set_text_color(*_C["verde_oscuro"])
                     _p.cell(0, 5, _s(title.upper()), new_x="LMARGIN", new_y="NEXT")
@@ -6584,15 +6584,28 @@ def pagina_mapa_riesgo():
                             _cur_col = 0
                             _cur_y  += _ch_rc + _vgap
 
-                # ════════════════════════════════════════════════════════════
-                # PÁGINA 2 — Distribución + Tablas
-                # ════════════════════════════════════════════════════════════
-                _pdf_obj.add_page()
-                _render_header(_pdf_obj)
-                _render_uc_band(_pdf_obj,
-                    _label_mr, _meta_adsc_mr, _clave_uc_pdf, _ultimo_contrato_pdf)
+                # Fijar Y al fondo de la última fila de tarjetas
+                if _ind_data:
+                    if _cur_col == 1:           # última fila solo tiene tarjeta izquierda
+                        _pdf_obj.set_y(_cur_y + _ch_rc + _vgap)
+                    else:
+                        _pdf_obj.set_y(_cur_y)  # ya avanzado tras fila completa
 
-                _pdf_obj.set_y(62)
+                # Helper: avanza a siguiente sección sin espacio muerto
+                def _next_section(_p, needed_mm=60):
+                    """Nueva página solo si no hay espacio; gap pequeño si hay."""
+                    if _p.get_y() + needed_mm > 257:
+                        _p.add_page()
+                        _render_header(_p)
+                        _render_uc_band(
+                            _p, _label_mr, _meta_adsc_mr,
+                            _clave_uc_pdf, _ultimo_contrato_pdf)
+                        _p.set_y(62)
+                    else:
+                        _p.ln(6)
+
+                # ── Sección 02 ────────────────────────────────────────────
+                _next_section(_pdf_obj, 72)   # section tag + 2 pie charts (~60 mm)
                 _render_section_tag(_pdf_obj, "02", "Distribución por Tipo de Procedimiento")
 
                 _hw_pie = (180 - 4) / 2
@@ -6616,7 +6629,7 @@ def pagina_mapa_riesgo():
                     _pdf_obj.cell(0, 6, _s("(Gráficas no disponibles para esta selección)"),
                                   new_x="LMARGIN", new_y="NEXT")
 
-                _pdf_obj.ln(2)
+                _next_section(_pdf_obj, 55)   # section tag + header + ~5 filas min
                 _render_section_tag(_pdf_obj, "03", "Principales Proveedores (Top 10)")
 
                 _rh_t = 5
@@ -6687,7 +6700,7 @@ def pagina_mapa_riesgo():
                     _pdf_obj.cell(_cw_pr[5], _rh_t, _pp,                             align="L", fill=True, border=0)
                     _pdf_obj.ln(_rh_t)
 
-                _pdf_obj.ln(4)
+                _next_section(_pdf_obj, 65)   # section tag + header + ~8 filas min
                 _render_section_tag(_pdf_obj, "04", "Gasto por Partida Presupuestaria CUCoP (Top 15)")
 
                 _gasto_pdf_ok = False
@@ -6771,15 +6784,8 @@ def pagina_mapa_riesgo():
                     _pdf_obj.cell(0, 5, _s("Sin datos de partidas disponibles para esta selección."),
                                   new_x="LMARGIN", new_y="NEXT")
 
-                # ════════════════════════════════════════════════════════════
-                # PÁGINA 3 — Concentración + Notas
-                # ════════════════════════════════════════════════════════════
-                _pdf_obj.add_page()
-                _render_header(_pdf_obj)
-                _render_uc_band(_pdf_obj,
-                    _label_mr, _meta_adsc_mr, _clave_uc_pdf, _ultimo_contrato_pdf)
-
-                _pdf_obj.set_y(62)
+                # ── Sección 05 ────────────────────────────────────────────
+                _next_section(_pdf_obj, 90)   # donut (~72 mm) + métricas + section tag
                 _render_section_tag(_pdf_obj, "05", "Concentración del Mercado de Proveedores")
 
                 if _fig_donut_mr is not None:
@@ -6823,6 +6829,7 @@ def pagina_mapa_riesgo():
                 except Exception:
                     _pdf_obj.ln(4)
 
+                _next_section(_pdf_obj, 65)   # fuentes + criterios + cláusula técnica
                 _render_section_tag(_pdf_obj, "06", "Notas Metodológicas y Fuentes")
 
                 _y_notes = _pdf_obj.get_y()
@@ -6851,7 +6858,7 @@ def pagina_mapa_riesgo():
                 _pdf_obj.set_text_color(*_C["verde_primario"])
                 _pdf_obj.cell(76, 4, _s("CRITERIOS DE SEVERIDAD"), new_x="LMARGIN", new_y="NEXT")
                 for _sev_def, _sev_key_b, _sev_txt in [
-                    ("CRÍTICO", "crit",  "Vulneración probable a la LAASSP o CPEUM. Reporte a OIC recomendado."),
+                    ("CRÍTICO", "crit",  "Vulneración probable a la LAASSP o CPEUM."),
                     ("ALTO",    "alto",  "Patrón anómalo persistente; amerita auditoría sustantiva."),
                     ("MEDIO",   "medio", "Desviación a parámetros institucionales; revisión documental."),
                     ("SIN OBS.","ok",    "Indicador dentro de tolerancia. Monitoreo rutinario."),
