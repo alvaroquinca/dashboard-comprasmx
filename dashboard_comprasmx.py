@@ -6829,63 +6829,6 @@ def pagina_mapa_riesgo():
                 except Exception:
                     _pdf_obj.ln(4)
 
-                _next_section(_pdf_obj, 65)   # fuentes + criterios + cláusula técnica
-                _render_section_tag(_pdf_obj, "06", "Notas Metodológicas y Fuentes")
-
-                _y_notes = _pdf_obj.get_y()
-                _col_w2  = 84
-
-                _pdf_obj.set_xy(18, _y_notes)
-                _pdf_obj.set_font("Helvetica", "B", 6.5)
-                _pdf_obj.set_text_color(*_C["verde_primario"])
-                _pdf_obj.cell(_col_w2, 4, _s("FUENTES DE DATOS"), new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.set_font("Helvetica", "", 7)
-                _pdf_obj.set_text_color(*_C["negro"])
-                for _fs in [
-                    f"ComprasMX — Plataforma Nacional de Contrataciones Públicas ({_anios_pdf_str}).",
-                    "Directorio de Proveedores Sancionados (SABG).",
-                    "Listado Art. 69-B CFF (EFOS) — SAT.",
-                    "Catálogo CUCoP vigente al ejercicio fiscal.",
-                    "Directorio de Unidades Compradoras IMSS.",
-                ]:
-                    _pdf_obj.set_x(18)
-                    _pdf_obj.multi_cell(_col_w2, 3.8, _s(f"* {_fs}"), new_x="LMARGIN", new_y="NEXT")
-
-                _y_crit = _y_notes
-                _xb     = 18 + _col_w2 + 12
-                _pdf_obj.set_xy(_xb, _y_crit)
-                _pdf_obj.set_font("Helvetica", "B", 6.5)
-                _pdf_obj.set_text_color(*_C["verde_primario"])
-                _pdf_obj.cell(76, 4, _s("CRITERIOS DE SEVERIDAD"), new_x="LMARGIN", new_y="NEXT")
-                for _sev_def, _sev_key_b, _sev_txt in [
-                    ("CRÍTICO", "crit",  "Vulneración probable a la LAASSP o CPEUM."),
-                    ("ALTO",    "alto",  "Patrón anómalo persistente; amerita auditoría sustantiva."),
-                    ("MEDIO",   "medio", "Desviación a parámetros institucionales; revisión documental."),
-                    ("SIN OBS.","ok",    "Indicador dentro de tolerancia. Monitoreo rutinario."),
-                ]:
-                    _xb_now = 18 + _col_w2 + 12
-                    _pdf_obj.set_xy(_xb_now, _pdf_obj.get_y())
-                    _pdf_obj.set_fill_color(*_SEV_C[_sev_key_b])
-                    _pdf_obj.set_text_color(255, 255, 255)
-                    _pdf_obj.set_font("Helvetica", "B", 5.5)
-                    _pdf_obj.cell(18, 3.5, _s(_sev_def), fill=True, align="C")
-                    _pdf_obj.set_text_color(*_C["negro"])
-                    _pdf_obj.set_font("Helvetica", "", 6.8)
-                    _pdf_obj.multi_cell(56, 3.5, _s(f"  {_sev_txt}"), new_x="LMARGIN", new_y="NEXT")
-
-                _pdf_obj.ln(4)
-                _pdf_obj.set_font("Helvetica", "B", 6.5)
-                _pdf_obj.set_text_color(*_C["negro"])
-                _pdf_obj.cell(0, 4, _s("CLÁUSULA TÉCNICA"), new_x="LMARGIN", new_y="NEXT")
-                _pdf_obj.set_font("Helvetica", "", 7)
-                _pdf_obj.set_text_color(*_C["gris"])
-                _pdf_obj.multi_cell(0, 3.8,
-                    _s("Reporte generado de manera automatizada por el motor de análisis de la DMII. "
-                       "Los indicadores constituyen señales para revisión sustantiva y NO determinan "
-                       "por sí mismos responsabilidad administrativa. Documento clasificado como USO "
-                       "INTERNO; su divulgación se rige por la LFTAIP y la LGTAIP."),
-                    new_x="LMARGIN", new_y="NEXT")
-
                 st.session_state[_pdf_state_key] = bytes(_pdf_obj.output())
             except Exception as _e_pdf:
                 st.error(f"⚠️ Error generando PDF: {_e_pdf}")
