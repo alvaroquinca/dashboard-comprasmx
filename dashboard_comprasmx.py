@@ -6033,21 +6033,23 @@ def pagina_mapa_riesgo():
     else:
         _riesgos_limpios.append("Concentraci\u00f3n en proveedor AD")
 
-    # \u2500\u2500 H. Excepci\u00f3n Art. 55 > 30 % \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    if "Descripci\u00f3n excepci\u00f3n" in _dff_sel.columns:
+    # ── H. Excepción Art. 55 > 30 % ─────────────────────────────────
+    _col_art_exc_mr = "Artículo de excepción"
+    if _col_art_exc_mr in _dff_sel.columns:
         _mask_exc_mr = (
-            _dff_sel["Descripci\u00f3n excepci\u00f3n"].notna()
-            & _dff_sel["Descripci\u00f3n excepci\u00f3n"].astype(str).str.strip().ne("")
+            _dff_sel[_col_art_exc_mr].astype(str).str.upper().str.strip()
+            .str.startswith("ART. 55", na=False)
         )
-        _monto_total_mr  = _dff_sel["Importe DRC"].sum()
-        _monto_exc_mr    = _dff_sel.loc[_mask_exc_mr, "Importe DRC"].sum()
+        _imp_exc_pos     = pd.to_numeric(_dff_sel["Importe DRC"], errors="coerce").fillna(0).clip(lower=0)
+        _monto_total_mr  = _imp_exc_pos.sum()
+        _monto_exc_mr    = _imp_exc_pos[_mask_exc_mr].sum()
         _pct_exc_mr = (_monto_exc_mr / _monto_total_mr * 100) if _monto_total_mr > 0 else 0
         if _pct_exc_mr > 30:
             _riesgos_activos.append(("exc_alto", _pct_exc_mr))
         else:
-            _riesgos_limpios.append(f"Excepci\u00f3n Art. 55 ({_pct_exc_mr:.1f}% del monto < 30%)")
+            _riesgos_limpios.append(f"Excepción Art. 55 ({_pct_exc_mr:.1f}% del monto < 30%)")
     else:
-        _riesgos_limpios.append("Excepci\u00f3n Art. 55")
+        _riesgos_limpios.append("Excepción Art. 55")
 
     if st.session_state.get(_pdf_flag_key):
         with st.spinner("Generando PDF institucional… ⏳"):
