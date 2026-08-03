@@ -2,11 +2,11 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-08-03 11:46",
-    "filas": 8997,
-    "filas_fuente": 66649,
+    "actualizado": "2026-08-03 (archivo completo obtenido desde otra laptop)",
+    "filas": 9053,
+    "filas_fuente": 67060,
     "columnas": 21,
-    "bytes_fuente": 81423265
+    "bytes_fuente": 81977387
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
