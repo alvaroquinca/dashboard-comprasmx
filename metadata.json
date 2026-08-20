@@ -6,7 +6,8 @@
     "filas": 9747,
     "filas_fuente": 71928,
     "columnas": 22,
-    "bytes_fuente": 87598849
+    "bytes_fuente": 87598849,
+    "verificado": "2026-08-20 09:00"
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
@@ -15,7 +16,8 @@
     "filas": 18771,
     "filas_fuente": 127762,
     "columnas": 22,
-    "bytes_fuente": 156059282
+    "bytes_fuente": 156059282,
+    "verificado": "2026-08-20 09:00"
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
@@ -24,19 +26,20 @@
     "filas": 44038,
     "filas_fuente": 146407,
     "columnas": 22,
-    "bytes_fuente": 170088257
+    "bytes_fuente": 170088257,
+    "verificado": "2026-08-20 09:00"
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-08-20 07:09",
+    "actualizado": "2026-08-20 09:00",
     "filas": 14761,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-08-20 07:10",
+    "actualizado": "2026-08-20 09:00",
     "filas": 27200,
     "columnas": 28
   },
