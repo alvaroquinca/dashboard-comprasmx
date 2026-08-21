@@ -2,44 +2,41 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-08-20 07:06",
-    "filas": 9747,
-    "filas_fuente": 71928,
+    "actualizado": "2026-08-21 09:00",
+    "filas": 9785,
+    "filas_fuente": 72183,
     "columnas": 22,
-    "bytes_fuente": 87598849,
-    "verificado": "2026-08-20 09:00"
+    "bytes_fuente": 87897709
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-08-20 07:08",
+    "actualizado": "2026-08-21 09:02",
     "filas": 18771,
-    "filas_fuente": 127762,
+    "filas_fuente": 127795,
     "columnas": 22,
-    "bytes_fuente": 156059282,
-    "verificado": "2026-08-20 09:00"
+    "bytes_fuente": 156103328
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-08-20 07:09",
+    "actualizado": "2026-08-21 09:03",
     "filas": 44038,
-    "filas_fuente": 146407,
+    "filas_fuente": 146408,
     "columnas": 22,
-    "bytes_fuente": 170088257,
-    "verificado": "2026-08-20 09:00"
+    "bytes_fuente": 170106390
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-08-20 09:00",
+    "actualizado": "2026-08-21 09:03",
     "filas": 14761,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-08-20 09:00",
+    "actualizado": "2026-08-21 09:04",
     "filas": 27200,
     "columnas": 28
   },
