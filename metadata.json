@@ -2,41 +2,41 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-08-24 09:00",
-    "filas": 9854,
-    "filas_fuente": 72483,
+    "actualizado": "2026-08-25 09:01",
+    "filas": 9884,
+    "filas_fuente": 72702,
     "columnas": 22,
-    "bytes_fuente": 88287916
+    "bytes_fuente": 88517021
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-08-24 09:02",
+    "actualizado": "2026-08-25 09:03",
     "filas": 18771,
-    "filas_fuente": 127837,
+    "filas_fuente": 127886,
     "columnas": 22,
-    "bytes_fuente": 156160089
+    "bytes_fuente": 156227839
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-08-24 09:04",
+    "actualizado": "2026-08-25 09:04",
     "filas": 44038,
-    "filas_fuente": 146409,
+    "filas_fuente": 146407,
     "columnas": 22,
-    "bytes_fuente": 170116102
+    "bytes_fuente": 170108958
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-08-24 09:04",
+    "actualizado": "2026-08-25 09:04",
     "filas": 14761,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-08-24 09:04",
+    "actualizado": "2026-08-25 09:05",
     "filas": 27200,
     "columnas": 28
   },
