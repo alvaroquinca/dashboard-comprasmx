@@ -2,41 +2,41 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-09-03 09:00",
-    "filas": 10384,
-    "filas_fuente": 75155,
+    "actualizado": "2026-09-04 09:00",
+    "filas": 10449,
+    "filas_fuente": 75476,
     "columnas": 22,
-    "bytes_fuente": 91259462
+    "bytes_fuente": 91620192
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-09-03 09:01",
-    "filas": 18773,
-    "filas_fuente": 128178,
+    "actualizado": "2026-09-04 09:01",
+    "filas": 18784,
+    "filas_fuente": 128218,
     "columnas": 22,
-    "bytes_fuente": 156611798
+    "bytes_fuente": 156655577
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-09-03 09:02",
+    "actualizado": "2026-09-04 09:02",
     "filas": 44038,
-    "filas_fuente": 146442,
+    "filas_fuente": 146443,
     "columnas": 22,
-    "bytes_fuente": 170213420
+    "bytes_fuente": 170223099
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-09-03 09:02",
+    "actualizado": "2026-09-04 09:02",
     "filas": 14761,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-09-03 09:03",
+    "actualizado": "2026-09-04 09:02",
     "filas": 27200,
     "columnas": 28
   },
