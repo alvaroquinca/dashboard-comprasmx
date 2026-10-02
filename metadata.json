@@ -2,41 +2,41 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-10-01 09:02",
-    "filas": 11792,
-    "filas_fuente": 81132,
+    "actualizado": "2026-10-02 09:00",
+    "filas": 11857,
+    "filas_fuente": 81421,
     "columnas": 22,
-    "bytes_fuente": 98146153
+    "bytes_fuente": 98496282
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-10-01 09:04",
-    "filas": 18786,
-    "filas_fuente": 128469,
+    "actualizado": "2026-10-02 09:01",
+    "filas": 18787,
+    "filas_fuente": 128475,
     "columnas": 22,
-    "bytes_fuente": 157037230
+    "bytes_fuente": 157047454
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-10-01 09:05",
+    "actualizado": "2026-10-02 09:03",
     "filas": 44038,
     "filas_fuente": 146454,
     "columnas": 22,
-    "bytes_fuente": 170354417
+    "bytes_fuente": 170354881
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-10-01 09:05",
+    "actualizado": "2026-10-02 09:03",
     "filas": 14837,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-10-01 09:05",
+    "actualizado": "2026-10-02 09:03",
     "filas": 27200,
     "columnas": 28
   },
