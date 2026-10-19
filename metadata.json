@@ -2,7 +2,7 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-10-19 09:08",
+    "actualizado": "2026-10-19 09:44",
     "filas": 12534,
     "filas_fuente": 84391,
     "columnas": 22,
@@ -11,7 +11,7 @@
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-10-19 09:23",
+    "actualizado": "2026-10-19 09:50",
     "filas": 18787,
     "filas_fuente": 128596,
     "columnas": 22,
@@ -20,7 +20,7 @@
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-10-19 09:30",
+    "actualizado": "2026-10-19 09:58",
     "filas": 44038,
     "filas_fuente": 146502,
     "columnas": 22,
@@ -29,14 +29,14 @@
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-10-19 09:31",
+    "actualizado": "2026-10-19 10:01",
     "filas": 15013,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-10-19 09:32",
+    "actualizado": "2026-10-19 10:01",
     "filas": 27200,
     "columnas": 28
   },
