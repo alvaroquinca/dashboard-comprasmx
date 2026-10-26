@@ -1,5 +1,5 @@
 """
-Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-10-23
+Dashboard de Integridad en Contrataciones Públicas - ComprasMX 2026 | datos: 2026-10-26
 Álvaro Quintero Casillas | División de Monitoreo de la Integridad Institucional | IMSS
 
 Instrucciones:
