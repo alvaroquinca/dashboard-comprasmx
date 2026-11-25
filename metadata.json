@@ -2,41 +2,41 @@
   "contratos_comprasmx_2026.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2026.csv",
-    "actualizado": "2026-11-24 09:40",
-    "filas": 13590,
-    "filas_fuente": 92256,
+    "actualizado": "2026-11-25 09:00",
+    "filas": 13654,
+    "filas_fuente": 92547,
     "columnas": 22,
-    "bytes_fuente": 111083802
+    "bytes_fuente": 111422288
   },
   "contratos_comprasmx_2025.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_ComprasMX_2025.csv",
-    "actualizado": "2026-11-24 09:52",
+    "actualizado": "2026-11-25 09:01",
     "filas": 18786,
-    "filas_fuente": 129108,
+    "filas_fuente": 129112,
     "columnas": 22,
-    "bytes_fuente": 157840539
+    "bytes_fuente": 157845865
   },
   "contratos_compranet_2024.csv": {
     "descripcion": "Contratos ComprasMX / CompraNet",
     "fuente": "https://upcp-cnetservicios.buengobierno.gob.mx/norah/documentos/recursos/lck/expedientes/obtener/Contratos_CompraNet_2024.csv",
-    "actualizado": "2026-11-24 09:54",
+    "actualizado": "2026-11-25 09:03",
     "filas": 44037,
     "filas_fuente": 146519,
     "columnas": 22,
-    "bytes_fuente": 170527256
+    "bytes_fuente": 170527363
   },
   "Listado_completo_69-B.csv": {
     "descripcion": "Listado contribuyentes Art. 69-B CFF (EFOS) — SAT",
     "fuente": "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv",
-    "actualizado": "2026-11-24 09:55",
+    "actualizado": "2026-11-25 09:03",
     "filas": 15126,
     "columnas": 3
   },
   "AnaliticaPreciosUnitarios.xlsx": {
     "descripcion": "Analítica de Precios Unitarios — DMII IMSS",
     "fuente": "local",
-    "actualizado": "2026-11-24 09:55",
+    "actualizado": "2026-11-25 09:03",
     "filas": 27200,
     "columnas": 28
   },
